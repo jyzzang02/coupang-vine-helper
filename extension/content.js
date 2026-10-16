@@ -7,6 +7,8 @@
   const scoring = window.VineScoring;
   if (!scoring) return;
   const STORAGE_KEY = 'vineHelperSettingsV1';
+  const STOCK_KEY = isDemoStorageKey();
+  function isDemoStorageKey() { return location.protocol === 'chrome-extension:' ? 'vineHelperDemoStockV07' : 'vineHelperStockV07'; }
   const VINE_PATH = '/productreview/adventurer/productList';
   // 설치된 확장 프로그램 내부의 오프라인 테스트 페이지 외에는 기존 쿠팡 목록만 분석한다.
   const isDemoPage = () => location.protocol === 'chrome-extension:' &&
@@ -24,6 +26,12 @@
   let previousRanking = '';
   let previousLeader = '';
   let rankUpdateCount = 0;
+  const previousStock = new Map();
+  const stockChanges = new Map();
+  let stockReady = false;
+  let stockSaveTimer = null;
+  const pageLoadedAt = new Date();
+  const loadTime = pageLoadedAt.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
   const productCache = new Map();
   const decoratedCards = new Set();
   let autoTimer = null;
@@ -69,6 +77,12 @@
   .meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:5px;font-size:12px}.price{color:#d14b20;font-weight:700}
   .pill{font-size:10px;background:#e9f1ff;color:#1a5ab3;border-radius:6px;padding:2px 5px}
   .reason{color:#69788f;font-size:11px;margin-top:4px;line-height:1.5}
+  .stock{font-size:10px;background:#e7f8f0;color:#087442;border-radius:6px;padding:2px 5px;font-weight:700}
+  .delta{font-size:10px;background:#fff0dd;color:#944b00;border-radius:6px;padding:2px 5px}
+  .changes{flex:0 0 auto;max-height:106px;overflow:auto;font-size:11px;line-height:1.65;padding:8px 13px;background:#fffbf1;border-top:1px solid #f4dfb7;color:#895a12}
+  .changes b{display:block;margin-bottom:2px;color:#715017}
+  .changes .ch{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+
   .speed{border:1px solid #dce3ec;color:#223247;border-radius:7px;padding:6px;font-size:12px;background:white;cursor:pointer}
   .copy{font-size:11px;align-self:center;padding:5px 7px;border:1px solid #d6deea;background:white;border-radius:6px}
   .settings{padding:10px 13px;border-top:1px solid #e8edf3;overflow:auto;max-height:360px;background:#f8fafc}
@@ -86,9 +100,10 @@
   <button id="launch" class="launcher">🔎 상품 분석</button>
   <div id="panel" class="panel" hidden>
     <div class="top"><div><h2>체험단 상품 우선순위</h2><div class="small" id="summary">화면에 표시된 상품만 분석</div></div><button class="btn" id="close">닫기 ×</button></div>
-    <div class="toolbar"><button class="btn primary" id="scan">다시 스캔</button><button class="btn" id="options">⚙ 가중치 설정</button><button class="btn" id="export">CSV 저장</button><button class="btn" id="clear">누적 초기화</button></div>
+    <div class="toolbar"><button class="btn primary" id="scan">화면 다시 분석</button><button class="btn" id="options">⚙ 가중치 설정</button><button class="btn" id="export">CSV 저장</button><button class="btn" id="clear">누적 초기화</button></div>
     <div class="toolbar" style="padding-top:0"><button class="btn primary" id="auto">↡ 자동 스크롤 시작</button><button class="btn" id="stop" hidden>■ 스크롤 중지</button><label for="speed" class="small">속도</label><select id="speed" class="speed"><option value="1600">천천히</option><option value="1100" selected>보통</option><option value="750">빠르게</option></select><span id="scrollStatus" class="small">수동 시작</span></div>
     <div id="leader" class="leader"><b>현재 추천 1위</b><span id="leaderName">분석 대기 중</span></div>
+    <div id="changes" class="changes" hidden></div>
     <div id="results" class="results"><div class="empty">상품을 분석하려면 '다시 스캔'을 누르세요.</div></div>
     <div id="settings" class="settings" hidden>
       <div class="field"><label>최우선 키워드 (포함 시 일반 상품보다 우선)</label><textarea id="priorityKeywords" rows="2"></textarea></div>
@@ -99,10 +114,10 @@
       <div class="field"><label>선호 키워드 가중치</label><div class="range"><input id="keywordWeight" type="range" min="0" max="100"><span id="keywordWeightView"></span></div></div>
       <div class="field"><label>카테고리 가중치</label><div class="range"><input id="categoryWeight" type="range" min="0" max="100"><span id="categoryWeightView"></span></div></div>
       <div class="double"><div class="field"><label>가격 점수 만점 기준(원)</label><input id="preferredPrice" type="number" min="1000" step="10000"></div><div class="field"><label>최저 가격 필터(원)</label><input id="minPrice" type="number" min="0" step="10000"></div></div>
-      <div class="double"><div class="field"><label>최고 가격 필터(원, 0=제한 없음)</label><input id="maxPrice" type="number" min="0" step="10000"></div><div class="field"><label style="margin-top:21px"><input id="hideUnavailable" type="checkbox"> 품절/마감 상품 제외</label></div></div>
+      <div class="double"><div class="field"><label>최고 가격 필터(원, 0=제한 없음)</label><input id="maxPrice" type="number" min="0" step="10000"></div><div class="field"><label style="margin-top:21px"><input id="hideUnavailable" type="checkbox" checked disabled> 모두 소진은 항상 제외</label></div></div>
       <button id="save" class="btn primary">설정 저장하고 다시 계산</button> <button id="reset" class="btn">기본값으로 초기화</button>
     </div>
-    <div class="foot" id="foot">화면에 표시된 상품만 분석 · 신청/주문 자동화 없음</div>
+    <div class="foot" id="foot">재고는 마지막 페이지 새로고침 기준 · 자동 새로고침/신청 없음</div>
   </div>`;
   document.documentElement.appendChild(host);
 
@@ -148,6 +163,66 @@
     }
   } catch (_) { /* demo without extension API */ }
 
+  function storageFetch(key, cb) {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+        chrome.storage.local.get(key, result => cb(result?.[key] || null));
+        return;
+      }
+      if (isDemoPage()) cb(JSON.parse(localStorage.getItem(key) || 'null'));
+      else cb(null);
+    } catch (_) { cb(null); }
+  }
+  function storageSave(key, value) {
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage?.local) chrome.storage.local.set({[key]:value});
+      else if (isDemoPage()) localStorage.setItem(key, JSON.stringify(value));
+    } catch (_) { /* storage not available in test mode */ }
+  }
+  function productKey(product) { return `${product.itemIndex ?? ''}|` + product.name.toLocaleLowerCase('ko-KR').replace(/\s+/g,' ').trim(); }
+  function stockLabel(item) {
+    if (!item) return '정보 없음';
+    if (item.availability === 'soldout') return '모두 소진';
+    if (item.availability === 'available' && Number.isFinite(item.remaining)) return `${item.remaining}개 남음`;
+    if (item.availability === 'available') return '신청 가능';
+    return '재고 확인 필요';
+  }
+  storageFetch(STOCK_KEY, snapshot => {
+    if (snapshot?.items && typeof snapshot.items === 'object') {
+      for (const [key,val] of Object.entries(snapshot.items).slice(0,1200)) {
+        if (val && typeof val === 'object') previousStock.set(key,val);
+      }
+    }
+    stockReady = true;
+    if (visible) scan();
+  });
+  function trackStockChanges(products) {
+    if (!stockReady || isVineProductPage() === false) return;
+    for (const p of products) {
+      const prev = previousStock.get(productKey(p));
+      if (!prev || p.availability === 'unknown') continue;
+      if (prev.availability === p.availability && prev.remaining === p.remaining) continue;
+      stockChanges.set(productKey(p), {
+        name:p.name, before:stockLabel(prev), after:stockLabel(p), soldout:p.availability === 'soldout'
+      });
+    }
+    const target = $('changes');
+    const list = [...stockChanges.values()];
+    target.hidden = list.length === 0;
+    if (!list.length) return;
+    target.replaceChildren(mk('b', null, `📉 지난 분석과 비교 · ${list.length}개 변화`));
+    for (const change of list.slice(0,4)) target.appendChild(mk('div', {class:'ch'},
+      `${change.soldout ? '⛔':'↓'} ${change.before} → ${change.after} · ${change.name}`));
+  }
+  function scheduleStockSave() {
+    if (!stockReady || !productCache.size || stockSaveTimer) return;
+    stockSaveTimer = setTimeout(() => {
+      stockSaveTimer = null;
+      const items = Object.fromEntries([...productCache.values()].slice(0,1200).map(p=>[
+        productKey(p),{remaining:p.remaining ?? null, availability:p.availability || 'unknown'}]));
+      storageSave(STOCK_KEY,{seenAt:Date.now(),items});
+    },600);
+  }
   function fillSettings() {
     for (const id of ['priorityKeywords','preferredKeywords','excludeKeywords','categoryRules',
                       'priceWeight','keywordWeight','categoryWeight','preferredPrice','minPrice','maxPrice']) {
@@ -161,7 +236,7 @@
     const numbers = ['priceWeight','keywordWeight','categoryWeight','preferredPrice','minPrice','maxPrice'];
     for (const id of fields) settings[id] = $(id).value;
     for (const id of numbers) settings[id] = Math.max(0, Number($(id).value) || 0);
-    settings.hideUnavailable = $('hideUnavailable').checked;
+    settings.hideUnavailable = true;
     try { if (typeof chrome !== 'undefined' && chrome.storage?.local) chrome.storage.local.set({ [STORAGE_KEY]: settings }); } catch (_) { }
     settingsOpen = false;
     $('settings').hidden = true;
@@ -169,97 +244,92 @@
     scan();
   }
 
-  const priceRe = /(?:₩\s*)?(\d{1,3}(?:,\d{3})+|\d{4,9})\s*원?/g;
   const priceWithWon = /(\d{1,3}(?:,\d{3})+|\d{4,9})\s*원/g;
-  function findPrice(node, text) {
-    const candidates = [];
-    const selectors = ['[class*="price"]','[class*="Price"]','[data-price]'];
-    for (const selector of selectors) {
-      const els = node.querySelectorAll(selector);
-      for (const el of Array.from(els).slice(0, 8)) {
-        const line = el.getAttribute('data-price') || el.textContent || '';
-        const matched = [...line.matchAll(priceRe)].map(m => Number(m[1].replaceAll(',', '')));
-        candidates.push(...matched.filter(p => p >= 100 && p <= 100000000));
-      }
+  const stockExact = /^(모두\s*소진|\d{1,6}\s*개\s*남음|품절|신청\s*마감)$/;
+  const soldOutRe = /모두\s*소진|일시\s*품절|품절|신청\s*마감/;
+  const remainRe = /(\d{1,6})\s*개\s*남음/;
+  function readAvailability(text) {
+    const str = String(text || '');
+    if (soldOutRe.test(str)) return {availability:'soldout',remaining:0,unavailable:true};
+    const remain = str.match(remainRe);
+    if (remain) {
+      const count = Number(remain[1]);
+      return {availability:count > 0 ? 'available':'soldout',remaining:count,unavailable:count <= 0};
     }
-    if (candidates.length) return Math.max(...candidates);
-    const matches = [...text.matchAll(priceWithWon)].map(m => Number(m[1].replaceAll(',', '')));
-    return matches.length ? Math.max(...matches) : 0;
+    if (/신청\s*가능/.test(str)) return {availability:'available',remaining:null,unavailable:false};
+    return {availability:'unknown',remaining:null,unavailable:false};
+  }
+  function findPrice(card) {
+    const priceNode = card.querySelector('[class*="price"],[class*="Price"],[data-price]');
+    const chosen = priceNode?.getAttribute('data-price') || priceNode?.textContent || '';
+    const direct = [...chosen.matchAll(priceWithWon)].map(m=>Number(m[1].replaceAll(',','')));
+    if (direct.length) return Math.max(...direct);
+    const all = [...(card.innerText || '').matchAll(priceWithWon)].map(m=>Number(m[1].replaceAll(',','')));
+    return all.length ? Math.max(...all) : 0;
   }
   function cleanName(value) {
-    const text = String(value || '').replace(/\s+/g, ' ').trim();
-    return text.replace(/(?:₩\s*)?\d{1,3}(?:,\d{3})+\s*원.*$/,'').replace(/\s+(?:마감|신청 완료|품절).*$/,'').trim().slice(0, 130);
+    return String(value || '').replace(/\s+/g,' ').trim().replace(/^\d{1,3}\s+/, '').slice(0,165);
   }
-  function findTitle(node, anchor, fallbackText) {
-    const targetSelectors = '[class*="product-name"],[class*="productName"],[class*="product-title"],[class*="productTitle"],[class*="item-name"],[class*="itemName"],[class*="title"],[class*="name"]';
-    for (const el of Array.from(node.querySelectorAll(targetSelectors)).slice(0, 16)) {
-      if (el.closest('button')) continue;
-      const candidate = cleanName(el.textContent);
-      if (candidate.length >= 5 && candidate.length <= 130 && !/^\d+[\d,]*원?$/.test(candidate)) return candidate;
+  function readName(card) {
+    // Prefer a product name element, but real Coupang DOM may not contain a product detail link.
+    const explicit = card.querySelector('[class*="product-name"],[class*="productName"],[class*="product-title"],[class*="productTitle"],[class*="item-name"],[class*="itemName"],[data-product-name]');
+    if (explicit) {
+      const name = cleanName(explicit.textContent);
+      if (name.length >= 5) return name;
     }
-    const img = anchor?.querySelector('img[alt]') || node.querySelector('img[alt]');
-    const imgAlt = cleanName(img?.alt);
-    if (imgAlt.length >= 5 && !/^(product|image|상품 이미지)$/i.test(imgAlt)) return imgAlt;
-    const anchorText = cleanName(anchor?.innerText || anchor?.textContent || '');
-    if (anchorText.length >= 5) return anchorText;
-    return cleanName(fallbackText.split(/\n/)[0]);
+    const lines=(card.innerText || '').split(/\n+/).map(x=>x.trim()).filter(Boolean);
+    for (const line of lines) {
+      if (/^\d{1,4}$/.test(line) || stockExact.test(line) || /^\d[\d,]*\s*원$/.test(line)) continue;
+      if (/^쿠팡체험단$|^상품보기$/.test(line)) continue;
+      const name = cleanName(line);
+      if (name.length >= 5) return name;
+    }
+    const img=card.querySelector('img[alt]');
+    const alternative=cleanName(img?.alt);
+    return alternative.length > 5 ? alternative : '';
   }
   function isShown(node) {
     if (!node || !node.isConnected || !node.getClientRects().length) return false;
-    const style = getComputedStyle(node);
+    const style=getComputedStyle(node);
     return style.display !== 'none' && style.visibility !== 'hidden';
   }
-  function findCard(anchor) {
-    const list = [];
-    let node = anchor;
-    for (let depth = 0; node && depth <= 5; node = node.parentElement, depth++) {
-      if (node === document.body || node === document.documentElement || node === host) break;
-      const text = node.innerText || '';
-      if (text.length < 15 || text.length > 750) continue;
-      if (node.querySelectorAll('a[href*="/products/"]').length > 4) continue;
-      list.push({ node, text });
+  function findStockCard(leaf) {
+    // Choose smallest ancestor representing exactly one item, with image, price and stock label.
+    let node=leaf;
+    for (let d=0;d<9 && node && node !== document.body;d++,node=node.parentElement) {
+      if (node === host || node.contains(host)) return null;
+      const txt=node.innerText || '';
+      if (txt.length < 15 || txt.length > 650) continue;
+      if (!node.querySelector('img')) continue;
+      if (!/\d[\d,]*\s*원/.test(txt)) continue;
+      const statuses=(txt.match(/모두\s*소진|\d{1,6}\s*개\s*남음|신청\s*마감/g)||[]).length;
+      if (statuses !== 1) continue;
+      if (!isShown(node)) continue;
+      return node;
     }
-    const candidate = list.find(x => priceWithWon.test(x.text));
-    priceWithWon.lastIndex = 0;
-    return candidate || list.at(0) || { node: anchor, text: anchor.innerText || '' };
+    return null;
   }
   function extractProducts() {
-    // 리뷰 작성 목록 등 다른 페이지에서는 상품을 절대 추출하지 않는다.
     if (!isVineProductPage() || hasNoProductsNotice()) return [];
-    const found = new Map();
-    const candidates = Array.from(document.querySelectorAll('a[href*="/products/"]'));
-    for (const anchor of candidates.slice(0, 2000)) {
-      if (host.contains(anchor) || !isShown(anchor)) continue;
-      const { node, text } = findCard(anchor);
-      const name = findTitle(node, anchor, text);
-      if (name.length < 5 || /^(더보기|장바구니|전체메뉴|구매하기|상품 상세 보기)$/.test(name)) continue;
-      const url = anchor.href || '';
-      const price = findPrice(node, text);
-      const unavailable = /(신청\s*완료|신청\s*마감|일시\s*품절|품절|쿠폰\s*마감)/.test(text);
-      // 한 상품에 여러 링크가 있더라도 결과에는 한 번만 표시한다.
-      const key = 'name:' + name.toLocaleLowerCase('ko-KR').replace(/\s+/g, ' ');
-      const entry = { name, price, unavailable, url, card: node };
-      const previous = found.get(key);
-      if (!previous || (!previous.price && price) || (!previous.url && url)) found.set(key, entry);
-    }
-    // 상품 상세 링크가 없는 페이지를 위한 보조 탐지: 화면의 상품 카드만 추정.
-    if (found.size < 3) {
-      const selector = '[class*="product-item"],[class*="productItem"],[class*="product-card"],[class*="productCard"],[class*="item-card"]';
-      for (const node of Array.from(document.querySelectorAll(selector)).slice(0, 500)) {
-        if (host.contains(node) || !isShown(node)) continue;
-        if (node.querySelectorAll(selector).length) continue;
-        const text = node.innerText || '';
-        if (text.length < 15 || text.length > 650) continue;
-        const anchor = node.querySelector('a[href]');
-        const name = findTitle(node, anchor, text);
-        const price = findPrice(node, text);
-        if (name.length < 5 || (!price && !node.querySelector('img'))) continue;
-        const key = 'name:' + name.toLowerCase();
-        if (!found.has(key)) found.set(key, {
-          name, price, url: anchor?.href || '', card: node,
-          unavailable: /(신청\s*완료|신청\s*마감|일시\s*품절|품절|쿠폰\s*마감)/.test(text)
-        });
-      }
+    const found=new Map();
+    const leaves=Array.from(document.querySelectorAll('div,span,p,small,strong,em,li'));
+    for (const node of leaves.slice(0,12000)) {
+      if (host.contains(node) || !isShown(node)) continue;
+      if (node.children.length && [...node.children].some(child=>stockExact.test(child.textContent?.trim() || ''))) continue;
+      const text=node.textContent?.trim() || '';
+      if (!stockExact.test(text)) continue;
+      const card=findStockCard(node);
+      if (!card) continue;
+      const name=readName(card);
+      if (name.length < 5) continue;
+      const stock=readAvailability(text);
+      const anchor=card.querySelector('a[href*="/products/"]');
+      const indexCandidate=(card.querySelector('.number,[class*="itemIndex"],[class*="item-index"],[class*="rank"]')?.textContent || card.innerText.split(/\n/).map(x=>x.trim())[0] || '').trim();
+      const itemIndex=/^\d{1,4}$/.test(indexCandidate) ? Number(indexCandidate) : null;
+      const product={name,price:findPrice(card),url:anchor?.href||'',card,itemIndex,...stock};
+      const key=productKey(product);
+      const previous=found.get(key);
+      if (!previous || (!previous.price && product.price)) found.set(key,product);
     }
     return [...found.values()];
   }
@@ -398,7 +468,7 @@
     // 상품 점수 목록을 이전 페이지에서 가져오는 것처럼 보이지 않게 초기화.
     if (!isVineProductPage()) {
       stopAutoScroll('체험단 상품 페이지가 아님');
-      productCache.clear(); clearHighlights();
+      productCache.clear(); clearHighlights(); $('changes').hidden=true;
       previousRanking = ''; previousLeader = '';
       $('leaderName').textContent = '체험단 상품 목록에서만 분석 가능';
       observedCount = 0; ranked = [];
@@ -410,20 +480,20 @@
     }
     if (hasNoProductsNotice()) {
       stopAutoScroll('상품 미공개');
-      productCache.clear(); clearHighlights();
+      productCache.clear(); clearHighlights(); $('changes').hidden=true;
       previousRanking = ''; previousLeader = '';
       $('leaderName').textContent = '상품 목록이 아직 공개되지 않았어요';
       observedCount = 0; ranked = [];
       $('summary').textContent = '감지 0개 · 쿠팡체험단 상품 미공개';
       $('results').replaceChildren(mk('div', {class:'empty'},
         '현재 쿠팡체험단 상품이 없습니다.\n상품 목록이 공개된 후 다시 스캔해 주세요.'));
-      $('foot').textContent = '신청/주문/새로고침 없음 · 열린 목록만 로컬 분석';
+      $('foot').textContent = '자동 새로고침 없음 · 재고는 쿠팡 페이지를 직접 새로고침해야 바뀜';
       return;
     }
-    $('foot').textContent = isDemoPage() ? '오프라인 가상 상품 테스트 · 실제 쿠팡 접속/신청 없음' : '페이지 스크롤은 사이트의 지연 로딩을 유발할 수 있음 · 자동 신청/새로고침 없음';
+    $('foot').textContent = isDemoPage() ? `테스트 화면 · 페이지 로드 ${loadTime} · 다음 재고는 F5 후 반영` : `마지막 새로고침 ${loadTime} 기준 · 수량은 자동 갱신되지 않음 · 신청/자동 새로고침 없음`;
     const products = extractProducts();
     for (const product of products) {
-      const key = product.name.toLocaleLowerCase('ko-KR').replace(/\s+/g, ' ');
+      const key = productKey(product);
       const previous = productCache.get(key);
       productCache.set(key, {
         ...previous, ...product,
@@ -435,6 +505,8 @@
     for (const item of productCache.values()) {
       if (item.card && !item.card.isConnected) item.card = null;
     }
+    trackStockChanges(products);
+    scheduleStockSave();
     observedCount = productCache.size;
     ranked = scoring.rankProducts([...productCache.values()], settings);
     paintHighlights();
@@ -450,7 +522,9 @@
       previousLeader = leaderKey;
       previousRanking = orderSignature;
     }
-    $('summary').textContent = `누적 ${observedCount}개 · 추천 ${ranked.length}개 · 순위 갱신 ${rankUpdateCount}회`;
+    const availableCount = [...productCache.values()].filter(p => p.availability === 'available').length;
+    const soldCount = [...productCache.values()].filter(p => p.availability === 'soldout').length;
+    $('summary').textContent = `목록 ${observedCount}개 · 신청 가능 ${availableCount} · 모두 소진 ${soldCount} · 추천 ${ranked.length}`;
     // 순서가 달라질 때만 목록을 다시 만든다. 스크롤 중에도 별도 순위 창이 튀지 않는다.
     if (!changed) return;
     const resultArea = $('results');
@@ -470,6 +544,10 @@
       const meta = mk('div', { class:'meta' });
       meta.appendChild(mk('span', { class:'price' }, product.price > 0 ? product.price.toLocaleString('ko-KR') + '원' : '가격 미확인'));
       meta.appendChild(mk('span', { class:'pill' }, product.score + '점'));
+      meta.appendChild(mk('span', {class:'stock'}, stockLabel(product)));
+      const previous=previousStock.get(productKey(product));
+      if (previous && (previous.remaining !== product.remaining || previous.availability !== product.availability))
+        meta.appendChild(mk('span', {class:'delta'}, `${stockLabel(previous)} → ${stockLabel(product)}`));
       if (product.priority) meta.appendChild(mk('span', { class:'pill' }, '최우선'));
       info.append(nameEl, meta, mk('div', { class:'reason' }, product.reasons.join(' · ') || '기본 기준'));
       const copy = mk('button', { class:'copy', title:'상품명 복사' }, '복사');
@@ -497,8 +575,8 @@
   function exportCsv() {
     if (!ranked.length) return;
     const quote = v => '"' + String(v == null ? '' : v).replaceAll('"', '""') + '"';
-    const rows = [['순위','상품명','추정가격(원)','점수','판단근거','링크'],
-      ...ranked.map((p,i) => [i+1,p.name,p.price || '',p.score,p.reasons.join(' / '),p.url])];
+    const rows = [['순위','상품명','가격(원)','재고상태','남은수량','점수','판단근거','링크'],
+      ...ranked.map((p,i) => [i+1,p.name,p.price || '',stockLabel(p),p.remaining ?? '',p.score,p.reasons.join(' / '),p.url])];
     const csv = '\ufeff' + rows.map(r => r.map(quote).join(',')).join('\r\n');
     const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
     const url = URL.createObjectURL(blob);

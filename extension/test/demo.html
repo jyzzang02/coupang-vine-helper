@@ -1,44 +1,25 @@
-<!doctype html>
-<html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>상품 분석 보조도구 | 오프라인 테스트</title>
+<!doctype html><html lang="ko" data-demo-page="true"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"/><title>쿠팡체험단 형태 오프라인 모의 테스트</title>
 <style>
-  *{box-sizing:border-box} html{scroll-behavior:auto}body{margin:0;background:#f3f6fb;color:#192334;font-family:'Malgun Gothic',Arial,sans-serif;font-size:14px}
-  header{padding:22px max(28px,calc((100% - 1260px)/2));background:#fff;border-bottom:1px solid #e3e7ec;box-shadow:0 2px 9px #19324b0c}
-  .eyebrow{font-size:11px;font-weight:800;color:#1957b9;letter-spacing:.3px}
-  h1{margin:6px 0 5px;font-size:25px}h2{margin:0;font-size:17px}
-  .sub{color:#667387;line-height:1.6;font-size:13px;margin:0}
-  main{max-width:1260px;margin:20px auto;padding:0 26px 70px}
-  .guide{padding:16px 20px;border:1px solid #d7e1f0;border-radius:12px;background:#eaf2ff;margin-bottom:15px}
-  .guide b{display:block;font-size:14px;margin-bottom:6px}
-  .guide p{margin:0;line-height:1.7;font-size:12.5px;color:#355478}
-  .toolbar{position:sticky;top:0;background:#fff;border:1px solid #e0e6ed;border-radius:10px;padding:12px 16px;z-index:10;display:flex;align-items:center;gap:10px;justify-content:space-between;flex-wrap:wrap;box-shadow:0 2px 9px #19324b09}
-  button{padding:9px 12px;border:1px solid #c8d4e2;border-radius:8px;background:#fff;font:600 12px 'Malgun Gothic',Arial,sans-serif;color:#2b4b75;cursor:pointer}
-  button.primary{background:#1761c2;border-color:#1761c2;color:white}button:hover{filter:brightness(.96)}
-  #status{color:#506178;font-size:12px}
-  .title-row{display:flex;align-items:center;justify-content:space-between;margin:19px 3px 14px}
-  .product-list{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:15px;align-items:stretch}
-  .product-card{position:relative;background:#fff;border:1px solid #e2e8f1;border-radius:12px;padding:10px;min-height:310px;box-shadow:0 1px 5px #1824330e}
-  .photo{height:158px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--bg,#eaf2ff);font-size:67px;user-select:none}
-  .product-name{font-size:13px;font-weight:700;line-height:1.5;margin:12px 0 3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;height:40px}
-  .product-card a{color:#202e44;text-decoration:none}.product-price{font-size:18px;font-weight:800;letter-spacing:-.3px;margin:9px 0 7px}
-  .available{font-size:11px;color:#167348}.soldout{font-size:11px;color:#a34844}
-  #end{background:#fff;border:1px dashed #c5d0dd;padding:20px;border-radius:10px;text-align:center;color:#62768d;margin-top:25px;line-height:1.8}
-  .warning{font-size:12px;color:#5b6675;max-width:1260px;margin:auto;padding:0 26px 40px}
-  @media(max-width:960px){.product-list{grid-template-columns:repeat(3,minmax(0,1fr))}}
-  @media(max-width:650px){.product-list{grid-template-columns:repeat(2,minmax(0,1fr))}main{padding:0 10px 30px}h1{font-size:21px}.photo{height:130px}}
-</style>
-</head><body>
-<header><div class="eyebrow">🧪 OFFLINE DEMO · TEST DATA ONLY</div><h1>상품 분석 보조도구 테스트</h1><p class="sub">가상 상품 목록을 단계적으로 불러옵니다. 쿠팡 로그인이나 네트워크 접속이 필요 없습니다.</p></header>
-<main>
- <section class="guide"><b>사용 방법</b><p>① 오른쪽 아래 <b>🔎 상품 분석</b> 클릭 → ② <b>↡ 자동 스크롤 시작</b> 클릭 → ③ 상품이 추가될수록 상단 추천 1위와 각 카드의 추천 배지가 바뀌는지 확인하세요.<br>가중치 설정에서 <b>노트북</b>을 최우선, <b>케이스</b>를 제외 키워드로 입력하고 테스트해도 됩니다. 실제 신청 기능은 없습니다.</p></section>
- <section class="toolbar"><div><b>가상 체험단 상품 목록</b><div id="status">상품 로딩 중…</div></div>
- <div><button id="add" type="button">상품 12개 더 표시</button> <button id="leader" class="primary" type="button">최우선 상품 등장시키기</button> <button id="restart" type="button">목록 초기화</button></div></section>
- <div class="title-row"><h2>체험 상품</h2><span id="count">0개 로딩</span></div>
- <section id="items" class="product-list" aria-label="가상 상품 목록"></section>
- <div id="end">아래로 스크롤하면 다음 상품이 추가됩니다.</div>
-</main>
-<p class="warning">※ 실제 쿠팡체험단과 무관한 가상 데이터입니다. 이 페이지에서의 성공은 실제 쿠팡 화면에서의 정상 작동을 보장하지 않습니다.</p>
-<script src="demo.js"></script>
-<script src="../scoring.js"></script>
-<script src="../content.js"></script>
+*{box-sizing:border-box}[hidden]{display:none!important}html,body{margin:0} body{background:#fff;color:#222;font:12px/1.5 'Malgun Gothic',Arial,sans-serif}button{cursor:pointer;font-family:inherit}
+.utility{height:30px;background:#f3f3f3;border-bottom:1px solid #ddd;font-size:11px;display:flex;align-items:center;justify-content:flex-end;gap:18px;padding:0 max(20px,calc((100vw - 1090px)/2))}.layout{width:1090px;margin:auto}
+.header{height:106px;display:flex;align-items:center;gap:26px}.square{width:90px;height:90px;background:#3267ed;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:17px;line-height:1.6}.logo{font-weight:800;font-size:35px;letter-spacing:-2px;color:#562528}.logo span:nth-child(1){color:#248ad0}.logo span:nth-child(2){color:#f9b321}.logo span:nth-child(3){color:#70b450}.logo span:nth-child(4){color:#2684d2}.logo span:nth-child(5){color:#ec4248}
+.search{flex:1;border:2px solid #317cf9;height:41px;color:#888;font-size:12px;padding:10px}.links{border-bottom:1px solid #ddd;height:38px;padding-left:114px;color:#68798b;font-size:11px}.links b{margin-right:25px;font-weight:400}
+.main{display:grid;grid-template-columns:128px 1fr 92px;gap:25px;margin-top:15px}.aside{background:#f8f8f8;border:1px solid #dedede}.asidehead{background:#2671ac;color:#fff;height:107px;font-size:28px;text-align:center;padding-top:28px}.aside section{padding:13px 15px;border-bottom:1px solid #e4e4e4}.aside section h3{font-size:11px;margin:0 0 9px}.aside section p{font-size:11px;color:#5f5f5f;margin:7px 0}.maincontent{min-width:0}.title{font-size:26px;font-weight:400;margin:10px 0 8px}.title-rule{border-top:1px solid #3177ff}.profile{height:128px;display:flex;gap:15px;align-items:center;padding:15px 20px;border:1px solid #f0f0f0;margin-top:14px}.avatar{width:57px;height:57px;border-radius:50%;background:radial-gradient(circle,#b4c7cf,#53667a);}.reviewer{font-size:20px;white-space:nowrap}.reviewer small{font-size:10px;color:#36b682}.stat{padding:0 10px;border-left:1px solid #eee;text-align:center}.stat strong{font:38px Arial;color:#4a4a4a}.tabs{margin:30px 0 18px;border:1px solid #e3e3e3;display:flex;height:42px}.tabs span{flex:1;text-align:center;padding:12px;border-right:1px solid #eee}.tabs .selected{font-weight:700;position:relative}.tabs .selected:after{content:'OPEN!';position:absolute;right:6px;top:-15px;background:#62bcea;color:white;font-size:10px;padding:3px}.ads>div{height:126px;margin:8px 0;border-radius:3px;background:#f3f8ff;border:1px solid #e4efff;padding:15px 8px;font-size:14px;font-weight:800;color:#2170b8}.ads>div:nth-child(2){background:#fdf1c7;color:#bd7b1a}.ads>div:nth-child(3){background:#f5fbeb;color:#4f8b49}
+.mockBar{padding:12px 12px;margin:9px 0;background:#f9fbff;border:1px solid #e1eaf6;display:flex;align-items:center;gap:8px;flex-wrap:wrap}.mockBar button{background:white;border:1px solid #b8cce4;padding:6px 8px;border-radius:3px;color:#28538a;font-size:11px}.mockBar button.primary{background:#256fd1;color:white}.mockBar .description{width:100%;font-size:11px;color:#4f6681}.section-title{font-size:14px;font-weight:700;margin:14px 0;border-bottom:2px solid #ddd;padding-bottom:9px;display:flex;justify-content:space-between}
+#items{display:block}.product-row{position:relative;display:flex;gap:12px;min-height:100px;border-bottom:1px solid #ececec;padding:12px 5px 10px 0;font-size:12px;align-items:flex-start}.number{font-size:11px;color:#333;flex:0 0 20px;padding-top:2px}.thumb{height:76px;width:76px;object-fit:contain;flex:0 0 76px}.detail{min-width:0;flex:1;line-height:1.55;padding-right:15px}.product-name{font-size:12px;color:#222;line-height:1.4}.product-price{font-size:11px;color:#ce3329;margin-top:2px}.stock-text{margin-top:9px;color:#555;font-size:11px}.product-row.soldout .number,.product-row.soldout .product-name,.product-row.soldout .product-price,.product-row.soldout .stock-text{color:#b0b0b0}.product-row.soldout .thumb{opacity:.6}
+.end{padding:32px;text-align:center;color:#888}.disclaimer{font-size:11px;color:#666;padding:15px 0 50px;line-height:1.6}
+.dialogScrim{position:fixed;inset:0;background:rgba(255,255,255,.22);z-index:2000;display:flex;justify-content:center;align-items:flex-start;padding-top:125px}.intro{position:relative;width:490px;box-shadow:0 1px 8px #3333;background:#f3f3f3}.close{position:absolute;right:-18px;top:-18px;width:50px;height:50px;border-radius:50%;font-size:27px;color:white;background:#15171e;border:0;z-index:1}.introTop{height:250px;background:#1d2331;color:#9ec4e9;padding:28px 36px}.introTop small{font-size:9px;letter-spacing:4px;font-weight:700;color:#7aabd4}.introTop h1{font-size:31px;font-weight:300;line-height:1.2;margin:35px 0}.view{border:0;border-radius:50px;background:#65b9eb;color:white;font-size:12px;padding:8px 35px}.introHow{height:272px;padding:18px 38px;background:#b7dbf6}.introHow h2{font-size:19px;font-weight:400}.circles{display:flex;gap:3px;margin-top:28px}.circle{width:80px;height:80px;border-radius:50%;background:#51a3e3;display:flex;align-items:center;justify-content:center;color:white;text-align:center;font-size:10px;padding:6px}.circle:first-child{background:white;color:#3e91dc}.introCautions{height:164px;padding:14px 38px;background:#f5f5f5}.introCautions h2{font-size:19px;font-weight:400;margin:0 0 12px}.introCautions p{font-size:10px;color:#888;margin:3px 0}
+@media(max-width:1110px){.layout{width:96vw}.main{grid-template-columns:116px 1fr 70px;gap:9px}.header{gap:12px}}@media(max-width:720px){.aside,.ads{display:none}.main{display:block}.header .square{display:none}.header{height:90px}.links{padding-left:0}.profile{height:95px}.stat strong{font-size:24px}.intro{max-width:93vw}.introTop{height:230px}.circle{width:70px;height:70px}}
+</style></head><body>
+<div class="utility">즐겨찾기　 입점신청 ▾ <span>고객센터　 판매자 가입</span></div>
+<header class="layout header"><div class="square">☰<br>카테고리</div><div class="logo">cou<span>p</span><span>a</span><span>n</span><span>g</span></div><div class="search">전체　　　　　찾고 싶은 상품을 검색해보세요!</div><span>마이쿠팡</span><span>장바구니</span></header>
+<div class="layout links"><b>🔺 쿠팡플레이</b><b>🚀 로켓배송</b><b>🌱 로켓프레시</b><b>💳 다시 구매</b><b>🎁 로켓직구</b></div>
+<div class="layout main"><aside class="aside"><div class="asidehead">MY쿠팡</div><section><h3>MY 쇼핑</h3><p>주문목록/배송조회</p><p>취소/반품/교환/환불 내역</p><p>로켓와우 멤버십 관리</p></section><section><h3>MY 활동</h3><p>문의하기</p><p>리뷰관리</p><p>찜 리스트</p></section><section><h3>MY 정보</h3><p>개인정보확인/수정</p></section></aside>
+<main class="maincontent"><h1 class="title">리뷰관리</h1><div class="title-rule"></div><div class="profile"><div class="avatar"></div><div class="reviewer">체험단 테스트<br><small>실명 비공개</small></div><div class="stat">도움<br><strong>890</strong> 명</div><div class="stat">랭킹<br><strong>27,486</strong> 등</div></div>
+<div class="tabs"><span>리뷰 작성</span><span>작성한 리뷰</span><span class="selected">쿠팡체험단</span></div>
+<div class="mockBar"><b>🧪 오프라인 테스트</b><button id="prepare">다음 재고 상태 준비</button><button id="reset" class="primary">재고 처음부터</button><button id="reopen">처음 안내 다시 보기</button><span id="state">현재 재고 상태: 1단계</span><div class="description" id="help">실제 쿠팡과 연결되지 않습니다. 다음 재고 상태 준비를 누르고 <b>F5</b>를 눌러야 재고가 바뀝니다.</div></div>
+<div class="section-title">쿠팡체험단 상품 목록 <small id="count">0개</small></div><div id="items"></div><div id="end" class="end">아래로 스크롤하면 상품이 더 표시됩니다.</div><p class="disclaimer">이 화면은 사용자가 제공한 캡처를 참고해 만든 로컬 테스트입니다. 등록된 상품명 및 이미지 일부는 테스트용이며 실제 재고 정보가 아닙니다.</p></main>
+<aside class="ads"><div>쿠팡 only<br> 특별 혜택</div><div>가을나들이<br> 여행 할인</div><div>로켓배송<br> 오늘 도착</div></aside></div>
+<div id="intro" class="dialogScrim" hidden><div class="intro"><button class="close" id="close" aria-label="닫기">×</button><div class="introTop"><small>COUPANG PRODUCT REVIEW</small><h1>쿠팡체험단에<br>초대합니다.</h1><button class="view" id="view">상품보기 ›</button></div><div class="introHow"><h2>참여방법</h2><div class="circles"><div class="circle">쿠팡으로부터<br>초대장 수신</div><div class="circle">쿠팡체험단<br>상품 직접 선택</div><div class="circle">결제시<br>쿠폰 적용</div><div class="circle">상품 수령 후<br>사용</div><div class="circle">기한 내<br>상품평 작성</div></div><p style="margin-top:28px">초대기준: 양질의 상품평을 꾸준히 작성하시면 초대될 확률이 높아집니다.</p></div><div class="introCautions"><h2>유의사항</h2><p>• 쿠팡체험단과 관련한 상품 이용 정책을 준수해 주세요.</p><p>• 이 테스트 화면에서는 어떠한 상품도 신청할 수 없습니다.</p></div></div></div>
+<script src="demo.js"></script><script src="../scoring.js"></script><script src="../content.js"></script>
 </body></html>

@@ -13,7 +13,8 @@
     preferredPrice: 300000,
     minPrice: 0,
     maxPrice: 0,
-    hideUnavailable: true
+    hideUnavailable: true,
+    hideUnknownStock: true
   });
 
   const normalize = (x) => String(x || '').trim().toLocaleLowerCase('ko-KR');
@@ -37,7 +38,8 @@
     const name = normalize(product.name);
     const price = Number.isFinite(+product.price) ? Math.max(0, +product.price) : 0;
     if (!name || name.length < 3) return null;
-    if (s.hideUnavailable && product.unavailable) return null;
+    if (product.unavailable || product.availability === 'soldout') return null;
+    if (product.availability === 'unknown' && s.hideUnknownStock !== false) return null;
     if (s.minPrice > 0 && price > 0 && price < Number(s.minPrice)) return null;
     if (s.maxPrice > 0 && price > 0 && price > Number(s.maxPrice)) return null;
     const excluded = splitKeywords(s.excludeKeywords).find(k => name.includes(k));
