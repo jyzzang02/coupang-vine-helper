@@ -18,6 +18,29 @@
   let observer;
   let scanTimer;
   let settingsOpen = false;
+  const productCache = new Map();
+  const decoratedCards = new Set();
+  let autoTimer = null;
+  let autoRunning = false;
+  let autoStepCount = 0;
+  let autoStalledCount = 0;
+  const MAX_SCROLL_STEPS = 80;
+  const MARKER_CLASS = 'vine-helper-inline-recommendation';
+  const CARD_CLASS = 'vine-helper-recommended-card';
+  const highlightCss = document.createElement('style');
+  highlightCss.id = 'vine-helper-highlight-style';
+  highlightCss.textContent = `
+    .${CARD_CLASS} { position:relative!important; outline:2px solid #2774ce!important; outline-offset:-2px!important; }
+    .${CARD_CLASS}[data-vine-helper-top="true"] { outline:3px solid #e9a228!important; }
+    .${MARKER_CLASS} { position:absolute!important;right:5px!important;top:5px!important;
+      display:block!important;width:max-content!important;max-width:90%!important;
+      z-index:2147483600!important;background:#1253a6!important;color:#fff!important;
+      font:700 12px/1.4 'Malgun Gothic',Arial,sans-serif!important;letter-spacing:0!important;
+      padding:5px 8px!important;border-radius:7px!important;box-shadow:0 2px 8px #0003!important;
+      pointer-events:none!important;white-space:normal!important;text-align:left!important; }
+    .${CARD_CLASS}[data-vine-helper-top="true"] > .${MARKER_CLASS} { background:#9c5a00!important; }
+  `;
+  (document.head || document.documentElement).appendChild(highlightCss);
   const host = document.createElement('div');
   host.id = 'vine-helper-extension-root';
   host.style.cssText = 'position:fixed!important;z-index:2147483646!important;right:20px;bottom:18px;pointer-events:none;';
@@ -40,6 +63,7 @@
   .meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:5px;font-size:12px}.price{color:#d14b20;font-weight:700}
   .pill{font-size:10px;background:#e9f1ff;color:#1a5ab3;border-radius:6px;padding:2px 5px}
   .reason{color:#69788f;font-size:11px;margin-top:4px;line-height:1.5}
+  .speed{border:1px solid #dce3ec;color:#223247;border-radius:7px;padding:6px;font-size:12px;background:white;cursor:pointer}
   .copy{font-size:11px;align-self:center;padding:5px 7px;border:1px solid #d6deea;background:white;border-radius:6px}
   .settings{padding:10px 13px;border-top:1px solid #e8edf3;overflow:auto;max-height:360px;background:#f8fafc}
   .field{margin:0 0 10px}.field label{display:block;font-weight:700;font-size:12px;margin-bottom:4px}
@@ -53,7 +77,8 @@
   <button id="launch" class="launcher">🔎 상품 분석</button>
   <div id="panel" class="panel" hidden>
     <div class="top"><div><h2>체험단 상품 우선순위</h2><div class="small" id="summary">화면에 표시된 상품만 분석</div></div><button class="btn" id="close">닫기 ×</button></div>
-    <div class="toolbar"><button class="btn primary" id="scan">다시 스캔</button><button class="btn" id="options">⚙ 가중치 설정</button><button class="btn" id="export">CSV 저장</button></div>
+    <div class="toolbar"><button class="btn primary" id="scan">다시 스캔</button><button class="btn" id="options">⚙ 가중치 설정</button><button class="btn" id="export">CSV 저장</button><button class="btn" id="clear">누적 초기화</button></div>
+    <div class="toolbar" style="padding-top:0"><button class="btn primary" id="auto">↡ 자동 스크롤 시작</button><button class="btn" id="stop" hidden>■ 스크롤 중지</button><label for="speed" class="small">속도</label><select id="speed" class="speed"><option value="1600">천천히</option><option value="1100" selected>보통</option><option value="750">빠르게</option></select><span id="scrollStatus" class="small">수동 시작</span></div>
     <div id="results" class="results"><div class="empty">상품을 분석하려면 '다시 스캔'을 누르세요.</div></div>
     <div id="settings" class="settings" hidden>
       <div class="field"><label>최우선 키워드 (포함 시 일반 상품보다 우선)</label><textarea id="priorityKeywords" rows="2"></textarea></div>
@@ -67,7 +92,7 @@
       <div class="double"><div class="field"><label>최고 가격 필터(원, 0=제한 없음)</label><input id="maxPrice" type="number" min="0" step="10000"></div><div class="field"><label style="margin-top:21px"><input id="hideUnavailable" type="checkbox"> 품절/마감 상품 제외</label></div></div>
       <button id="save" class="btn primary">설정 저장하고 다시 계산</button> <button id="reset" class="btn">기본값으로 초기화</button>
     </div>
-    <div class="foot" id="foot">신청·구매·페이지 새로고침 없음 · 화면을 스크롤하면 재분석</div>
+    <div class="foot" id="foot">화면에 표시된 상품만 분석 · 신청/주문 자동화 없음</div>
   </div>`;
   document.documentElement.appendChild(host);
 
@@ -77,6 +102,7 @@
     $('panel').hidden = !open;
     $('launch').hidden = open;
     if (open) scan();
+    else stopAutoScroll('분석 창 닫음');
   };
   $('launch').addEventListener('click', () => setVisible(true));
   $('close').addEventListener('click', () => setVisible(false));
@@ -89,6 +115,10 @@
   $('save').addEventListener('click', saveSettings);
   $('reset').addEventListener('click', () => { settings = { ...scoring.DEFAULT_SETTINGS }; fillSettings(); saveSettings(); });
   $('export').addEventListener('click', exportCsv);
+  $('auto').addEventListener('click', startAutoScroll);
+  $('stop').addEventListener('click', () => stopAutoScroll('사용자 중지'));
+  $('clear').addEventListener('click', () => { productCache.clear(); clearHighlights(); scan(); });
+  window.addEventListener('pagehide', () => stopAutoScroll('페이지 이동'));
   for (const id of ['priceWeight', 'keywordWeight', 'categoryWeight']) {
     $(id).addEventListener('input', () => { $(id + 'View').textContent = $(id).value; });
   }
@@ -194,7 +224,7 @@
       const unavailable = /(신청\s*완료|신청\s*마감|일시\s*품절|품절|쿠폰\s*마감)/.test(text);
       // 한 상품에 여러 링크가 있더라도 결과에는 한 번만 표시한다.
       const key = 'name:' + name.toLocaleLowerCase('ko-KR').replace(/\s+/g, ' ');
-      const entry = { name, price, unavailable, url };
+      const entry = { name, price, unavailable, url, card: node };
       const previous = found.get(key);
       if (!previous || (!previous.price && price) || (!previous.url && url)) found.set(key, entry);
     }
@@ -212,13 +242,135 @@
         if (name.length < 5 || (!price && !node.querySelector('img'))) continue;
         const key = 'name:' + name.toLowerCase();
         if (!found.has(key)) found.set(key, {
-          name, price, url: anchor?.href || '',
+          name, price, url: anchor?.href || '', card: node,
           unavailable: /(신청\s*완료|신청\s*마감|일시\s*품절|품절|쿠폰\s*마감)/.test(text)
         });
       }
     }
     return [...found.values()];
   }
+  // 상품 카드 상단에 보조 프로그램 전용 순위 배지를 삽입한다.
+  // 쿠팡 상품이나 신청 버튼을 누르지 않으며, 제외된 상품도 화면에서 숨기지 않는다.
+  function clearHighlights() {
+    for (const card of decoratedCards) {
+      if (card.isConnected) {
+        card.classList.remove(CARD_CLASS);
+        delete card.dataset.vineHelperTop;
+        for (const badge of card.querySelectorAll('.' + MARKER_CLASS)) badge.remove();
+      }
+    }
+    decoratedCards.clear();
+  }
+  function paintHighlights() {
+    const wanted = new Map();
+    ranked.slice(0, 10).forEach((product, index) => {
+      const card = product.card;
+      if (card?.isConnected && !card.contains(host) && !wanted.has(card)) {
+        wanted.set(card, {rank:index+1,product});
+      }
+    });
+    for (const card of [...decoratedCards]) {
+      if (!card.isConnected || !wanted.has(card)) {
+        if (card.isConnected) {
+          card.classList.remove(CARD_CLASS);
+          delete card.dataset.vineHelperTop;
+          card.querySelectorAll('.' + MARKER_CLASS).forEach(x => x.remove());
+        }
+        decoratedCards.delete(card);
+      }
+    }
+    for (const [card, {rank,product}] of wanted) {
+      card.classList.add(CARD_CLASS);
+      if (rank <= 3) card.dataset.vineHelperTop = 'true';
+      else delete card.dataset.vineHelperTop;
+      let badge = [...card.children].find(el => el.classList?.contains(MARKER_CLASS));
+      if (!badge) {
+        badge = mk('div',{class:MARKER_CLASS});
+        card.appendChild(badge);
+      }
+      const text = `${rank <= 3 ? '★ ' : ''}추천 ${rank}위 · ${product.score}점`;
+      if (badge.textContent !== text) badge.textContent = text;
+      const description = product.reasons.join(' · ') || '기본 점수';
+      if (badge.title !== description) badge.title = description;
+      decoratedCards.add(card);
+    }
+  }
+
+  function getScrollElement() {
+    const firstCard = extractProducts().find(p => p.card?.isConnected)?.card;
+    if (firstCard) {
+      for (let parent = firstCard.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
+        const style = getComputedStyle(parent);
+        if (/(auto|scroll)/.test(style.overflowY) && parent.clientHeight > 240 &&
+            parent.scrollHeight > parent.clientHeight + 70) return parent;
+      }
+    }
+    return document.scrollingElement || document.documentElement;
+  }
+  function stopAutoScroll(reason = '완료') {
+    if (autoTimer != null) clearTimeout(autoTimer);
+    autoTimer = null;
+    autoRunning = false;
+    $('auto').hidden = false;
+    $('stop').hidden = true;
+    $('scrollStatus').textContent = reason;
+  }
+  function startAutoScroll() {
+    if (autoRunning) return;
+    if (!isVineProductPage()) {
+      $('scrollStatus').textContent = '체험단 페이지에서만 가능';
+      return;
+    }
+    if (hasNoProductsNotice()) {
+      scan();
+      $('scrollStatus').textContent = '상품이 아직 없음';
+      return;
+    }
+    autoRunning = true;
+    autoStepCount = 0;
+    autoStalledCount = 0;
+    $('auto').hidden = true;
+    $('stop').hidden = false;
+    const scroller = getScrollElement();
+    scroller.scrollTop = 0;
+    scan();
+    const tick = () => {
+      if (!autoRunning) return;
+      if (!visible || !isVineProductPage() || hasNoProductsNotice()) {
+        stopAutoScroll('페이지 이동 또는 상품 없음');
+        return;
+      }
+      if (autoStepCount >= MAX_SCROLL_STEPS) {
+        stopAutoScroll(`안전 제한 ${MAX_SCROLL_STEPS}회 도달`);
+        return;
+      }
+      const beforeTop = scroller.scrollTop;
+      const beforeHeight = scroller.scrollHeight;
+      const beforeCount = productCache.size;
+      const stride = Math.max(220, Math.round(scroller.clientHeight * 0.75));
+      scroller.scrollTop = Math.min(beforeTop + stride, beforeHeight - scroller.clientHeight);
+      autoStepCount++;
+      // 사이트에서 스크롤에 따라 새 카드가 생기는 시간을 기다린 뒤 재분석.
+      const delay = Number($('speed').value) || 1100;
+      autoTimer = setTimeout(() => {
+        autoTimer = null;
+        if (!autoRunning) return;
+        scan();
+        const moved = scroller.scrollTop > beforeTop + 3;
+        const extended = scroller.scrollHeight > beforeHeight + 3;
+        const discovered = productCache.size > beforeCount;
+        autoStalledCount = (moved || extended || discovered) ? 0 : autoStalledCount + 1;
+        $('scrollStatus').textContent = `${autoStepCount}/${MAX_SCROLL_STEPS}회 · ${productCache.size}개 발견`;
+        if (autoStalledCount >= 4) {
+          stopAutoScroll('맨 아래 도달 · 분석 완료');
+          return;
+        }
+        tick();
+      }, delay);
+    };
+    tick();
+  }
+
   function mk(tag, attrs, value) {
     const el = document.createElement(tag);
     if (attrs) for (const [key, val] of Object.entries(attrs)) el.setAttribute(key, String(val));
@@ -229,6 +381,8 @@
     if (!visible) return;
     // 상품 점수 목록을 이전 페이지에서 가져오는 것처럼 보이지 않게 초기화.
     if (!isVineProductPage()) {
+      stopAutoScroll('체험단 상품 페이지가 아님');
+      productCache.clear(); clearHighlights();
       observedCount = 0; ranked = [];
       $('summary').textContent = '분석 중지 · 체험단 상품 목록 페이지가 아님';
       $('results').replaceChildren(mk('div', {class:'empty'},
@@ -237,6 +391,8 @@
       return;
     }
     if (hasNoProductsNotice()) {
+      stopAutoScroll('상품 미공개');
+      productCache.clear(); clearHighlights();
       observedCount = 0; ranked = [];
       $('summary').textContent = '감지 0개 · 쿠팡체험단 상품 미공개';
       $('results').replaceChildren(mk('div', {class:'empty'},
@@ -244,12 +400,26 @@
       $('foot').textContent = '신청/주문/새로고침 없음 · 열린 목록만 로컬 분석';
       return;
     }
-    $('foot').textContent = '신청/주문/새로고침 없음 · 열린 목록만 로컬 분석';
+    $('foot').textContent = '페이지 스크롤은 사이트의 지연 로딩을 유발할 수 있음 · 자동 신청/새로고침 없음';
     const products = extractProducts();
-    observedCount = products.length;
-    ranked = scoring.rankProducts(products, settings);
+    for (const product of products) {
+      const key = product.name.toLocaleLowerCase('ko-KR').replace(/\s+/g, ' ');
+      const previous = productCache.get(key);
+      productCache.set(key, {
+        ...previous, ...product,
+        price: product.price || previous?.price || 0,
+        url: product.url || previous?.url || '',
+        card: product.card || previous?.card || null
+      });
+    }
+    for (const item of productCache.values()) {
+      if (item.card && !item.card.isConnected) item.card = null;
+    }
+    observedCount = productCache.size;
+    ranked = scoring.rankProducts([...productCache.values()], settings);
+    paintHighlights();
     const summary = $('summary');
-    summary.textContent = `감지 ${observedCount}개 · 조건 통과 ${ranked.length}개 · 현재 열린 화면 기준`;
+    summary.textContent = `누적 감지 ${observedCount}개 · 조건 통과 ${ranked.length}개 · 상위 10개 상품에 표시`;
     const resultArea = $('results');
     resultArea.replaceChildren();
     if (!ranked.length) {
@@ -272,7 +442,14 @@
       copy.addEventListener('click', () => {
         navigator.clipboard?.writeText(product.name).then(() => { copy.textContent = '완료'; }, () => fallbackCopy(product.name));
       });
-      item.append(rankEl, info, copy);
+      const jump = mk('button', { class:'copy', title:'쿠팡 페이지의 이 상품으로 이동' }, '위치');
+      jump.disabled = !product.card?.isConnected;
+      jump.addEventListener('click', () => {
+        if (!product.card?.isConnected) return;
+        stopAutoScroll('상품 위치 보기');
+        product.card.scrollIntoView({behavior:'smooth',block:'center'});
+      });
+      item.append(rankEl, info, jump, copy);
       resultArea.appendChild(item);
     }
     if (ranked.length > 100) resultArea.appendChild(mk('div', { class:'small' }, `상위 100개만 표시 중 (총 ${ranked.length}개)`));
@@ -299,7 +476,14 @@
     scanTimer = setTimeout(() => { scanTimer = null; scan(); }, 400);
   }
   observer = new MutationObserver(changes => {
-    if (changes.some(change => !host.contains(change.target))) scheduleScan();
+    const external = changes.some(change => {
+      if (host.contains(change.target) || change.target === highlightCss) return false;
+      if (change.target.nodeType === 1 && change.target.closest?.('.' + MARKER_CLASS)) return false;
+      if (change.type === 'childList' && [...change.addedNodes, ...change.removedNodes].every(node =>
+        node.nodeType === 1 && (node.classList?.contains(MARKER_CLASS) || node.id === 'vine-helper-highlight-style'))) return false;
+      return true;
+    });
+    if (external) scheduleScan();
   });
   observer.observe(document.body || document.documentElement, {childList:true, subtree:true, characterData:true});
   window.addEventListener('scroll', scheduleScan, { passive:true });
