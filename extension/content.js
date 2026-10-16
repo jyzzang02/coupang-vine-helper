@@ -7,6 +7,10 @@
   const scoring = window.VineScoring;
   if (!scoring) return;
   const STORAGE_KEY = 'vineHelperSettingsV1';
+  const VINE_PATH = '/productreview/adventurer/productList';
+  const isVineProductPage = () => location.hostname === 'my.coupang.com' &&
+    location.pathname.replace(/\/$/, '') === VINE_PATH;
+  const hasNoProductsNotice = () => /쿠팡체험단\s*상품이\s*없습니다/.test(document.body?.innerText || '');
   let settings = { ...scoring.DEFAULT_SETTINGS };
   let visible = false;
   let observedCount = 0;
@@ -44,7 +48,7 @@
   .double{display:flex;gap:8px}.double .field{flex:1;min-width:0}
   .range{display:flex;align-items:center;gap:8px}.range input{flex:1}.range span{width:25px;text-align:right}
   .foot{padding:8px 13px;border-top:1px solid #edf1f6;color:#66758a;font-size:11px;background:#f8fafc}
-  .empty{padding:25px 0;text-align:center;color:#6d788a;line-height:1.7}
+  .empty{padding:25px 0;text-align:center;color:#6d788a;line-height:1.7;white-space:pre-line}
   </style>
   <button id="launch" class="launcher">🔎 상품 분석</button>
   <div id="panel" class="panel" hidden>
@@ -176,6 +180,8 @@
     return candidate || list.at(0) || { node: anchor, text: anchor.innerText || '' };
   }
   function extractProducts() {
+    // 리뷰 작성 목록 등 다른 페이지에서는 상품을 절대 추출하지 않는다.
+    if (!isVineProductPage() || hasNoProductsNotice()) return [];
     const found = new Map();
     const candidates = Array.from(document.querySelectorAll('a[href*="/products/"]'));
     for (const anchor of candidates.slice(0, 2000)) {
@@ -186,11 +192,11 @@
       const url = anchor.href || '';
       const price = findPrice(node, text);
       const unavailable = /(신청\s*완료|신청\s*마감|일시\s*품절|품절|쿠폰\s*마감)/.test(text);
-      const idMatch = url.match(/\/products\/(\d+)/);
-      const key = idMatch ? 'product:' + idMatch[1] : 'name:' + name.toLowerCase();
+      // 한 상품에 여러 링크가 있더라도 결과에는 한 번만 표시한다.
+      const key = 'name:' + name.toLocaleLowerCase('ko-KR').replace(/\s+/g, ' ');
       const entry = { name, price, unavailable, url };
       const previous = found.get(key);
-      if (!previous || (previous.name.length < name.length && name.length <= 100) || (!previous.price && price)) found.set(key, entry);
+      if (!previous || (!previous.price && price) || (!previous.url && url)) found.set(key, entry);
     }
     // 상품 상세 링크가 없는 페이지를 위한 보조 탐지: 화면의 상품 카드만 추정.
     if (found.size < 3) {
@@ -221,6 +227,24 @@
   }
   function scan() {
     if (!visible) return;
+    // 상품 점수 목록을 이전 페이지에서 가져오는 것처럼 보이지 않게 초기화.
+    if (!isVineProductPage()) {
+      observedCount = 0; ranked = [];
+      $('summary').textContent = '분석 중지 · 체험단 상품 목록 페이지가 아님';
+      $('results').replaceChildren(mk('div', {class:'empty'},
+        '여기는 리뷰 작성/구매 내역 페이지예요.\n쿠팡체험단 탭에서 상품 목록을 열어주세요.\n\n분석 대상: my.coupang.com/productreview/adventurer/productList'));
+      $('foot').textContent = '이 페이지의 구매 이력은 수집하거나 분석하지 않습니다.';
+      return;
+    }
+    if (hasNoProductsNotice()) {
+      observedCount = 0; ranked = [];
+      $('summary').textContent = '감지 0개 · 쿠팡체험단 상품 미공개';
+      $('results').replaceChildren(mk('div', {class:'empty'},
+        '현재 쿠팡체험단 상품이 없습니다.\n상품 목록이 공개된 후 다시 스캔해 주세요.'));
+      $('foot').textContent = '신청/주문/새로고침 없음 · 열린 목록만 로컬 분석';
+      return;
+    }
+    $('foot').textContent = '신청/주문/새로고침 없음 · 열린 목록만 로컬 분석';
     const products = extractProducts();
     observedCount = products.length;
     ranked = scoring.rankProducts(products, settings);

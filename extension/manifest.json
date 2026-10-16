@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "체험단 상품 우선순위 도우미",
-  "version": "0.2.0",
-  "description": "현재 쿠팡 웹페이지에 표시된 상품을 로컬에서 분석하고 우선순위를 보여주는 보조 도구. 신청/주문 자동화 없음.",
+  "version": "0.3.0",
+  "description": "쿠팡체험단 상품 목록 페이지에서만 표시된 상품을 분석해 순위를 보여주는 보조 도구. 신청/주문 자동화 없음.",
   "permissions": [
     "storage"
   ],
@@ -10,9 +10,7 @@
   "content_scripts": [
     {
       "matches": [
-        "https://my.coupang.com/*",
-        "https://www.coupang.com/*",
-        "https://m.coupang.com/*"
+        "https://my.coupang.com/productreview/*"
       ],
       "js": [
         "scoring.js",
