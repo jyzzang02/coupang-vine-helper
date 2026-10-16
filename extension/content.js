@@ -8,8 +8,11 @@
   if (!scoring) return;
   const STORAGE_KEY = 'vineHelperSettingsV1';
   const VINE_PATH = '/productreview/adventurer/productList';
-  const isVineProductPage = () => location.hostname === 'my.coupang.com' &&
-    location.pathname.replace(/\/$/, '') === VINE_PATH;
+  // 설치된 확장 프로그램 내부의 오프라인 테스트 페이지 외에는 기존 쿠팡 목록만 분석한다.
+  const isDemoPage = () => location.protocol === 'chrome-extension:' &&
+    location.pathname === '/test/demo.html';
+  const isVineProductPage = () => isDemoPage() || (location.hostname === 'my.coupang.com' &&
+    location.pathname.replace(/\/$/, '') === VINE_PATH);
   const hasNoProductsNotice = () => /쿠팡체험단\s*상품이\s*없습니다/.test(document.body?.innerText || '');
   let settings = { ...scoring.DEFAULT_SETTINGS };
   let visible = false;
@@ -417,7 +420,7 @@
       $('foot').textContent = '신청/주문/새로고침 없음 · 열린 목록만 로컬 분석';
       return;
     }
-    $('foot').textContent = '페이지 스크롤은 사이트의 지연 로딩을 유발할 수 있음 · 자동 신청/새로고침 없음';
+    $('foot').textContent = isDemoPage() ? '오프라인 가상 상품 테스트 · 실제 쿠팡 접속/신청 없음' : '페이지 스크롤은 사이트의 지연 로딩을 유발할 수 있음 · 자동 신청/새로고침 없음';
     const products = extractProducts();
     for (const product of products) {
       const key = product.name.toLocaleLowerCase('ko-KR').replace(/\s+/g, ' ');
