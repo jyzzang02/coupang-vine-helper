@@ -18,6 +18,9 @@
   let observer;
   let scanTimer;
   let settingsOpen = false;
+  let previousRanking = '';
+  let previousLeader = '';
+  let rankUpdateCount = 0;
   const productCache = new Map();
   const decoratedCards = new Set();
   let autoTimer = null;
@@ -71,6 +74,9 @@
   .field textarea{resize:vertical;min-height:44px;line-height:1.5}
   .double{display:flex;gap:8px}.double .field{flex:1;min-width:0}
   .range{display:flex;align-items:center;gap:8px}.range input{flex:1}.range span{width:25px;text-align:right}
+  .leader{display:flex;align-items:flex-start;gap:6px;border-top:1px solid #ecf1f7;background:#f0f6ff;padding:8px 13px;font-size:12px;line-height:1.5}
+  .leader b{color:#1559a8;flex-shrink:0}.leader span{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .leader.changed{background:#fff0d6;transition:background 0.5s ease}
   .foot{padding:8px 13px;border-top:1px solid #edf1f6;color:#66758a;font-size:11px;background:#f8fafc}
   .empty{padding:25px 0;text-align:center;color:#6d788a;line-height:1.7;white-space:pre-line}
   </style>
@@ -79,6 +85,7 @@
     <div class="top"><div><h2>체험단 상품 우선순위</h2><div class="small" id="summary">화면에 표시된 상품만 분석</div></div><button class="btn" id="close">닫기 ×</button></div>
     <div class="toolbar"><button class="btn primary" id="scan">다시 스캔</button><button class="btn" id="options">⚙ 가중치 설정</button><button class="btn" id="export">CSV 저장</button><button class="btn" id="clear">누적 초기화</button></div>
     <div class="toolbar" style="padding-top:0"><button class="btn primary" id="auto">↡ 자동 스크롤 시작</button><button class="btn" id="stop" hidden>■ 스크롤 중지</button><label for="speed" class="small">속도</label><select id="speed" class="speed"><option value="1600">천천히</option><option value="1100" selected>보통</option><option value="750">빠르게</option></select><span id="scrollStatus" class="small">수동 시작</span></div>
+    <div id="leader" class="leader"><b>현재 추천 1위</b><span id="leaderName">분석 대기 중</span></div>
     <div id="results" class="results"><div class="empty">상품을 분석하려면 '다시 스캔'을 누르세요.</div></div>
     <div id="settings" class="settings" hidden>
       <div class="field"><label>최우선 키워드 (포함 시 일반 상품보다 우선)</label><textarea id="priorityKeywords" rows="2"></textarea></div>
@@ -101,7 +108,7 @@
     visible = open;
     $('panel').hidden = !open;
     $('launch').hidden = open;
-    if (open) scan();
+    if (open) { previousRanking = ''; scan(); }
     else stopAutoScroll('분석 창 닫음');
   };
   $('launch').addEventListener('click', () => setVisible(true));
@@ -117,7 +124,10 @@
   $('export').addEventListener('click', exportCsv);
   $('auto').addEventListener('click', startAutoScroll);
   $('stop').addEventListener('click', () => stopAutoScroll('사용자 중지'));
-  $('clear').addEventListener('click', () => { productCache.clear(); clearHighlights(); scan(); });
+  $('clear').addEventListener('click', () => {
+    productCache.clear(); clearHighlights(); previousRanking = ''; previousLeader = '';
+    rankUpdateCount = 0; scan();
+  });
   window.addEventListener('pagehide', () => stopAutoScroll('페이지 이동'));
   for (const id of ['priceWeight', 'keywordWeight', 'categoryWeight']) {
     $(id).addEventListener('input', () => { $(id + 'View').textContent = $(id).value; });
@@ -152,6 +162,7 @@
     try { if (typeof chrome !== 'undefined' && chrome.storage?.local) chrome.storage.local.set({ [STORAGE_KEY]: settings }); } catch (_) { }
     settingsOpen = false;
     $('settings').hidden = true;
+    previousRanking = '';
     scan();
   }
 
@@ -350,7 +361,9 @@
       const stride = Math.max(220, Math.round(scroller.clientHeight * 0.75));
       scroller.scrollTop = Math.min(beforeTop + stride, beforeHeight - scroller.clientHeight);
       autoStepCount++;
-      // 사이트에서 스크롤에 따라 새 카드가 생기는 시간을 기다린 뒤 재분석.
+      // 첫 번째 갱신은 스크롤 직후, 두 번째 갱신은 지연 로딩 대기 후에 이루어진다.
+      // 중첩 스크롤 컨테이너에도 작동하며 새 카드 발견 시 순위가 다시 정렬된다.
+      scheduleScan(100);
       const delay = Number($('speed').value) || 1100;
       autoTimer = setTimeout(() => {
         autoTimer = null;
@@ -383,6 +396,8 @@
     if (!isVineProductPage()) {
       stopAutoScroll('체험단 상품 페이지가 아님');
       productCache.clear(); clearHighlights();
+      previousRanking = ''; previousLeader = '';
+      $('leaderName').textContent = '체험단 상품 목록에서만 분석 가능';
       observedCount = 0; ranked = [];
       $('summary').textContent = '분석 중지 · 체험단 상품 목록 페이지가 아님';
       $('results').replaceChildren(mk('div', {class:'empty'},
@@ -393,6 +408,8 @@
     if (hasNoProductsNotice()) {
       stopAutoScroll('상품 미공개');
       productCache.clear(); clearHighlights();
+      previousRanking = ''; previousLeader = '';
+      $('leaderName').textContent = '상품 목록이 아직 공개되지 않았어요';
       observedCount = 0; ranked = [];
       $('summary').textContent = '감지 0개 · 쿠팡체험단 상품 미공개';
       $('results').replaceChildren(mk('div', {class:'empty'},
@@ -418,9 +435,23 @@
     observedCount = productCache.size;
     ranked = scoring.rankProducts([...productCache.values()], settings);
     paintHighlights();
-    const summary = $('summary');
-    summary.textContent = `누적 감지 ${observedCount}개 · 조건 통과 ${ranked.length}개 · 상위 10개 상품에 표시`;
+    const leader = ranked[0];
+    const leaderKey = leader ? `${leader.name}|${leader.price}|${leader.score}` : '';
+    const orderSignature = ranked.map(p => `${p.name}:${p.price}:${p.score}`).join('|');
+    const changed = previousRanking !== orderSignature;
+    if (changed) {
+      rankUpdateCount++;
+      const justChangedLeader = Boolean(previousLeader && leaderKey && previousLeader !== leaderKey);
+      $('leaderName').textContent = leader ? `${leader.name} (${leader.score}점)` : '추천 대상 상품 없음';
+      $('leader').classList.toggle('changed', justChangedLeader);
+      previousLeader = leaderKey;
+      previousRanking = orderSignature;
+    }
+    $('summary').textContent = `누적 ${observedCount}개 · 추천 ${ranked.length}개 · 순위 갱신 ${rankUpdateCount}회`;
+    // 순서가 달라질 때만 목록을 다시 만든다. 스크롤 중에도 별도 순위 창이 튀지 않는다.
+    if (!changed) return;
     const resultArea = $('results');
+    const prevListScroll = resultArea.scrollTop;
     resultArea.replaceChildren();
     if (!ranked.length) {
       resultArea.appendChild(mk('div', { class:'empty' }, observedCount ?
@@ -453,6 +484,7 @@
       resultArea.appendChild(item);
     }
     if (ranked.length > 100) resultArea.appendChild(mk('div', { class:'small' }, `상위 100개만 표시 중 (총 ${ranked.length}개)`));
+    resultArea.scrollTop = prevListScroll;
   }
   function fallbackCopy(text) {
     const textarea = document.createElement('textarea');
@@ -471,9 +503,9 @@
     document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  function scheduleScan() {
+  function scheduleScan(delay = 140) {
     if (!visible || scanTimer) return;
-    scanTimer = setTimeout(() => { scanTimer = null; scan(); }, 400);
+    scanTimer = setTimeout(() => { scanTimer = null; scan(); }, delay);
   }
   observer = new MutationObserver(changes => {
     const external = changes.some(change => {
@@ -486,6 +518,9 @@
     if (external) scheduleScan();
   });
   observer.observe(document.body || document.documentElement, {childList:true, subtree:true, characterData:true});
-  window.addEventListener('scroll', scheduleScan, { passive:true });
+  // capture=true: 쿠팡이 페이지 안에 별도 스크롤 영역을 만들어도 변화 감지.
+  // 자동 스크롤은 매 단계의 상품 추출 결과를 누적해 실시간으로 순위를 갱신한다.
+  document.addEventListener('scroll', () => scheduleScan(120), { passive:true, capture:true });
+  window.addEventListener('scroll', () => scheduleScan(120), { passive:true });
   window.addEventListener('load', scheduleScan, { once:true });
 })();
