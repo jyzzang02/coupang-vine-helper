@@ -45,7 +45,19 @@ node test/rules.test.js
 | v0.6 | 오프라인 모의 상품 목록 테스트 페이지 |
 | v0.7 | 재고 상태 구분, 모두 소진 제외, F5 이후 수량 비교 |
 
-각 버전은 Git 태그(`v0.1`~`v0.7`)로 이동할 수 있습니다. v0.4는 원본 ZIP 없이 당시의 소스 수정 스크립트를 이용해 복원한 버전이며, 별도 태그 설명에 이를 명시했습니다.
+버전별 소스는 각 커밋에서 확인할 수 있습니다.
+
+| 버전 | GitHub 커밋 |
+| --- | --- |
+| v0.1 | [f5a7ae4](https://github.com/jyzzang02/coupang-vine-helper/tree/f5a7ae4bd49036a36613f9aea17abbd7a34f91ef) |
+| v0.2 | [8272ab1](https://github.com/jyzzang02/coupang-vine-helper/tree/8272ab1be3b8c893e5edc6a1b9aae990dc49e945) |
+| v0.3 | [0bf73c7](https://github.com/jyzzang02/coupang-vine-helper/tree/0bf73c7c20b5cb75a2ec97d168997e71f85e6307) |
+| v0.4 | [74e9851](https://github.com/jyzzang02/coupang-vine-helper/tree/74e9851c35a4370b548ddc9ce9a97d4f39ee2abc) |
+| v0.5 | [8a3d0f7](https://github.com/jyzzang02/coupang-vine-helper/tree/8a3d0f749620568724c807193d00300af4bcd978) |
+| v0.6 | [6dc071b](https://github.com/jyzzang02/coupang-vine-helper/tree/6dc071b8fb109e478784e996037064b2c7ae09a1) |
+| v0.7 | [4378bf7](https://github.com/jyzzang02/coupang-vine-helper/tree/4378bf754810b3311f09c19b3eb271f14392fa3b) |
+
+v0.4는 당시의 수정 스크립트로 복원한 버전입니다. GitHub API로 이관하면서 커밋 SHA는 로컬 백업과 달라졌고, 원격 버전 태그는 생성하지 않았습니다.
 
 ## 범위 및 주의사항
 
