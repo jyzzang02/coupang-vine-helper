@@ -10,9 +10,9 @@
     priceWeight: 75,
     priceMode: 'relative', // relative = 이번 회차 상품들의 중앙값 대비 가격
     autoRefreshEnabled: false,
-    refreshIntervalSeconds: 60,
+    refreshIntervalSeconds: 15,
     reviewAutoRefreshEnabled: false,
-    reviewRefreshIntervalSeconds: 60,
+    reviewRefreshIntervalSeconds: 15,
     keywordWeight: 65,
     categoryWeight: 60,
     preferredPrice: 300000,
