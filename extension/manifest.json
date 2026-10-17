@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "체험단 상품 우선순위 도우미",
-  "version": "0.8.6",
-  "description": "체험단 상품 추천 TOP 10, 자동 새로고침, 30초 위치 유예, 5만원 이하 지연 로딩 오프라인 테스트. 자동 신청 없음.",
+  "version": "0.8.7",
+  "description": "체험단 추천 TOP10 (빨강·노랑·파랑), 독립 가중치 설정, 선택형 새로고침. 자동 신청 없음.",
   "permissions": [
     "storage"
   ],
