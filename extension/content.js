@@ -9,6 +9,7 @@
   const STORAGE_KEY = 'vineHelperSettingsV1';
   const PANEL_KEY = 'vineHelperPanelOpenV08';
   const MIN_REFRESH_SEC = 5;
+  const LOCATION_REFRESH_PAUSE_MS = 30_000;
   const REFRESH_SECONDS = [5, 10, 15, 20, 30];
   const LAST_REFRESH_KEY = 'vineHelperLastReloadV083';
   const MAX_WAIT_FOR_NEW_ITEMS = 4; // 지연 로딩 목록이 나타날 기회 보장
@@ -41,6 +42,7 @@
   let stockReady = false;
   let stockSaveTimer = null;
   let nextRefreshAt = 0;
+  let locationRefreshPauseUntil = 0;
   let refreshInProgress = false;
   let refreshCheckTimer = null;
   let reviewEditorTouched = false;
@@ -250,7 +252,7 @@
     catch (_) { return 0; }
   }
   function reloadCooldownMs() {
-    return Math.max(0, firstEligibleReloadAt - Date.now(), readLastReloadAt() + MIN_REFRESH_SEC * 1000 - Date.now());
+    return Math.max(0, firstEligibleReloadAt - Date.now(), readLastReloadAt() + MIN_REFRESH_SEC * 1000 - Date.now(), locationRefreshPauseUntil - Date.now());
   }
   function markReloadNow() {
     try { sessionStorage.setItem(LAST_REFRESH_KEY, String(Date.now())); }
@@ -258,7 +260,7 @@
   }
   function armRefresh() {
     nextRefreshAt = visible && canRefreshHere() && currentRefreshEnabled() && !document.hidden
-      ? Date.now() + Math.max(MIN_REFRESH_SEC, currentRefreshSeconds()) * 1000 : 0;
+      ? Math.max(Date.now() + Math.max(MIN_REFRESH_SEC, currentRefreshSeconds()) * 1000, locationRefreshPauseUntil) : 0;
     updateRefreshStatus();
   }
   function updateRefreshStatus() {
@@ -267,6 +269,8 @@
     else if (!visible) $('refreshStatus').textContent = '창을 열면 시작';
     else if (document.hidden) $('refreshStatus').textContent = '탭 비활성 · 일시중지';
     else if (reviewEditorOpen()) $('refreshStatus').textContent = '리뷰 편집 감지 · 일시중지';
+    else if (Date.now() < locationRefreshPauseUntil)
+      $('refreshStatus').textContent = `위치 확인 중 · ${Math.ceil((locationRefreshPauseUntil-Date.now())/1000)}초 후 재개`;
     else if (pendingImmediateRefresh) {
       const cooldown = reloadCooldownMs();
       $('refreshStatus').textContent = cooldown
@@ -304,6 +308,14 @@
     if (immediateRefreshTimer != null) clearTimeout(immediateRefreshTimer);
     immediateRefreshTimer = null;
   }
+  // '위치'로 상품을 확인하는 동안 주기 갱신과 조건부 즉시 갱신을 모두 보류.
+  // 다시 누르면 30초 타이머를 처음부터 재설정한다.
+  function postponeRefreshForLocation() {
+    locationRefreshPauseUntil = Date.now() + LOCATION_REFRESH_PAUSE_MS;
+    clearPendingRefresh();
+    if (canRefreshHere() && currentRefreshEnabled()) nextRefreshAt = locationRefreshPauseUntil;
+    updateRefreshStatus();
+  }
   function flushImmediateRefresh() {
     if (!pendingImmediateRefresh || refreshInProgress) return;
     if (!currentRefreshEnabled() || !visible || !canRefreshHere()) {
@@ -324,7 +336,8 @@
   }
   function requestImmediateRefresh(reason) {
     // 자동 새로고침 OFF이거나 리뷰를 편집하고 있으면 스크롤을 중단하지 않는다.
-    if (!currentRefreshEnabled() || !visible || document.hidden || reviewEditorOpen()) return false;
+    if (!currentRefreshEnabled() || !visible || document.hidden || reviewEditorOpen() ||
+        Date.now() < locationRefreshPauseUntil) return false;
     pendingImmediateRefresh = reason;
     stopAutoScroll(`${reason} · 새로고침`);
     flushImmediateRefresh();
@@ -592,7 +605,7 @@
         mk('div',{class:'reason'},p.reasons.join(' · ')||'기본 순서'));
       const locate=mk('button',{class:'copy'},'위치');
       locate.disabled=!p.card?.isConnected;
-      locate.addEventListener('click',()=>{if(!p.card?.isConnected)return;stopAutoScroll('상품 위치 보기');p.card.scrollIntoView({behavior:'smooth',block:'center'});});
+      locate.addEventListener('click',()=>{if(!p.card?.isConnected)return;stopAutoScroll('상품 위치 보기');postponeRefreshForLocation();p.card.scrollIntoView({behavior:'smooth',block:'center'});});
       item.append(number,info,locate);
       area.appendChild(item);
     }
@@ -858,11 +871,12 @@
       copy.addEventListener('click', () => {
         navigator.clipboard?.writeText(product.name).then(() => { copy.textContent = '완료'; }, () => fallbackCopy(product.name));
       });
-      const jump = mk('button', { class:'copy', title:'쿠팡 페이지의 이 상품으로 이동' }, '위치');
+      const jump = mk('button', { class:'copy', title:'쿠팡 페이지의 이 상품으로 이동 (자동 새로고침 30초 유예)' }, '위치');
       jump.disabled = !product.card?.isConnected;
       jump.addEventListener('click', () => {
         if (!product.card?.isConnected) return;
         stopAutoScroll('상품 위치 보기');
+        postponeRefreshForLocation();
         product.card.scrollIntoView({behavior:'smooth',block:'center'});
       });
       item.append(rankEl, info, jump, copy);
