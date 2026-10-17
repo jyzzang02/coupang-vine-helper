@@ -8,7 +8,11 @@
   if (!scoring) return;
   const STORAGE_KEY = 'vineHelperSettingsV1';
   const PANEL_KEY = 'vineHelperPanelOpenV08';
-  const MIN_REFRESH_SEC = 30;
+  const MIN_REFRESH_SEC = 5;
+  const REFRESH_SECONDS = [5, 10, 15, 20, 30];
+  const LAST_REFRESH_KEY = 'vineHelperLastReloadV083';
+  const MAX_WAIT_FOR_NEW_ITEMS = 4; // 지연 로딩 목록이 나타날 기회 보장
+  const MIN_BOTTOM_WAIT_MS = 850; // 고속 스크롤도 동적 로딩에 최소 대기
   const STOCK_KEY = isDemoStorageKey();
   function isDemoStorageKey() { return location.protocol === 'chrome-extension:' ? 'vineHelperDemoStockV07' : 'vineHelperStockV07'; }
   const VINE_PATH = '/productreview/adventurer/productList';
@@ -20,7 +24,8 @@
     location.pathname === '/test/demo.html';
   const isVineProductPage = () => isDemoPage() || (location.hostname === 'my.coupang.com' &&
     location.pathname.replace(/\/$/, '') === VINE_PATH);
-  const hasNoProductsNotice = () => /쿠팡체험단\s*상품이\s*없습니다/.test(document.body?.innerText || '');
+  const hasNoProductsNotice = () => productCache.size === 0 &&
+    /쿠팡체험단\s*상품이\s*없습니다/.test(document.body?.textContent || '');
   let settings = { ...scoring.DEFAULT_SETTINGS };
   let visible = false;
   let observedCount = 0;
@@ -37,7 +42,11 @@
   let stockSaveTimer = null;
   let nextRefreshAt = 0;
   let refreshInProgress = false;
+  let refreshCheckTimer = null;
   let reviewEditorTouched = false;
+  const firstEligibleReloadAt = Date.now() + MIN_REFRESH_SEC * 1000;
+  let pendingImmediateRefresh = '';
+  let immediateRefreshTimer = null;
   const pageLoadedAt = new Date();
   const loadTime = pageLoadedAt.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
   const productCache = new Map();
@@ -46,7 +55,8 @@
   let autoRunning = false;
   let autoStepCount = 0;
   let autoStalledCount = 0;
-  const MAX_SCROLL_STEPS = 80;
+  let bottomWaitStartedAt = 0;
+  const MAX_SCROLL_STEPS = 250;
   const MARKER_CLASS = 'vine-helper-inline-recommendation';
   const CARD_CLASS = 'vine-helper-recommended-card';
   const highlightCss = document.createElement('style');
@@ -113,8 +123,8 @@
   <div id="panel" class="panel" hidden>
     <div class="top"><div><h2 id="viewTitle">체험단 상품 우선순위</h2><div class="small" id="summary">화면에 표시된 상품만 분석</div></div><button class="btn" id="close">닫기 ×</button></div>
     <div class="toolbar"><button class="btn primary" id="scan">화면 다시 분석</button><button class="btn" id="options">⚙ 가중치 설정</button><button class="btn" id="export">CSV 저장</button><button class="btn" id="clear">누적 초기화</button></div>
-    <div class="toolbar" style="padding-top:0"><button class="btn primary" id="auto">↡ 자동 스크롤 시작</button><button class="btn" id="stop" hidden>■ 스크롤 중지</button><label for="speed" class="small">속도</label><select id="speed" class="speed"><option value="1600">천천히</option><option value="1100" selected>보통</option><option value="750">빠르게</option></select><span id="scrollStatus" class="small">수동 시작</span></div>
-    <div class="refreshBar"><label><input id="refreshEnabled" type="checkbox"> 자동 새로고침</label><select id="refreshInterval"><option value="30">30초</option><option value="60" selected>60초</option><option value="120">2분</option><option value="300">5분</option></select><span class="small" id="refreshStatus">기본 OFF</span></div>
+    <div class="toolbar" style="padding-top:0"><button class="btn primary" id="auto">↡ 자동 스크롤 시작</button><button class="btn" id="stop" hidden>■ 스크롤 중지</button><label for="speed" class="small">속도</label><select id="speed" class="speed"><option value="850">안정</option><option value="350">빠름</option><option value="180" selected>고속</option></select><span id="scrollStatus" class="small">수동 시작</span></div>
+    <div class="refreshBar"><label><input id="refreshEnabled" type="checkbox"> 자동 새로고침</label><select id="refreshInterval"><option value="5">5초</option><option value="10">10초</option><option value="15" selected>15초</option><option value="20">20초</option><option value="30">30초</option></select><span class="small" id="refreshStatus">기본 OFF</span></div>
     <div id="leader" class="leader"><b id="leaderLabel">현재 추천 1위</b><span id="leaderName">분석 대기 중</span></div>
     <div id="changes" class="changes" hidden></div>
     <div id="results" class="results"><div class="empty">상품을 분석하려면 '다시 스캔'을 누르세요.</div></div>
@@ -142,7 +152,7 @@
     $('launch').hidden = open;
     try { sessionStorage.setItem(PANEL_KEY, open ? 'yes' : 'no'); } catch (_) { }
     if (open) { previousRanking = ''; scan(); armRefresh(); }
-    else { stopAutoScroll('분석 창 닫음'); nextRefreshAt = 0; updateRefreshStatus(); }
+    else { clearPendingRefresh(); stopAutoScroll('분석 창 닫음'); nextRefreshAt = 0; updateRefreshStatus(); }
   };
   $('launch').addEventListener('click', () => setVisible(true));
   $('close').addEventListener('click', () => setVisible(false));
@@ -160,6 +170,7 @@
   $('refreshEnabled').addEventListener('change', () => {
     if (isReviewTestPage()) settings.reviewAutoRefreshEnabled = $('refreshEnabled').checked;
     else settings.autoRefreshEnabled = $('refreshEnabled').checked;
+    if (!currentRefreshEnabled()) clearPendingRefresh();
     saveRefreshPreference();
   });
   $('refreshInterval').addEventListener('change', () => {
@@ -194,10 +205,11 @@
     }
   } catch (_) { /* demo without extension API */ }
 
-  // 체험단과 리뷰 작성 페이지의 자동 새로고침은 별도 ON/OFF 및 주기.
+  // 자동 새로고침은 체험단과 리뷰 테스트 각각 별도 ON/OFF 및 주기를 유지한다.
   function reviewEditorOpen() {
     if (!isReviewTestPage()) return false;
     if (reviewEditorTouched) return true;
+    // 입력창이 열려 있으면 직접 작성 중이 아니더라도 보수적으로 새로고침 중지.
     const inputs = document.querySelectorAll('textarea,[contenteditable="true"],[role="textbox"]');
     for (const input of inputs) {
       if (!host.contains(input) && isShown(input)) return true;
@@ -205,6 +217,7 @@
     return [...document.querySelectorAll('dialog[open],[role="dialog"],[aria-modal="true"]')]
       .some(dialog => !host.contains(dialog) && isShown(dialog) && /리뷰|평가|후기/.test(dialog.innerText || ''));
   }
+  // 검토·리뷰 작성 중 입력 내용이 사라지는 것을 막는다. 다시 F5하기 전까지 보호.
   document.addEventListener('input', event => {
     if (!isReviewTestPage() || host.contains(event.target)) return;
     const el = event.target;
@@ -215,9 +228,9 @@
   }, true);
   function syncRefreshControls() {
     const supported = canRefreshHere();
-    const allowed = [30, 60, 120, 300];
     const seconds = currentRefreshSeconds();
-    const normalized = allowed.includes(seconds) ? seconds : 60;
+    // 기존 버전의 60/120/300초 설정은 새 주기 범위 중 가장 긴 30초로 변환.
+    const normalized = REFRESH_SECONDS.includes(seconds) ? seconds : seconds > 30 ? 30 : 15;
     if (isReviewTestPage()) settings.reviewRefreshIntervalSeconds = normalized;
     else settings.refreshIntervalSeconds = normalized;
     $('refreshEnabled').checked = supported && currentRefreshEnabled();
@@ -232,6 +245,17 @@
     catch (_) { if (isDemoPage()) localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); }
     armRefresh();
   }
+  function readLastReloadAt() {
+    try { return Number(sessionStorage.getItem(LAST_REFRESH_KEY)) || 0; }
+    catch (_) { return 0; }
+  }
+  function reloadCooldownMs() {
+    return Math.max(0, firstEligibleReloadAt - Date.now(), readLastReloadAt() + MIN_REFRESH_SEC * 1000 - Date.now());
+  }
+  function markReloadNow() {
+    try { sessionStorage.setItem(LAST_REFRESH_KEY, String(Date.now())); }
+    catch (_) { /* storage blocked; fall back to the in-page refresh timer */ }
+  }
   function armRefresh() {
     nextRefreshAt = visible && canRefreshHere() && currentRefreshEnabled() && !document.hidden
       ? Date.now() + Math.max(MIN_REFRESH_SEC, currentRefreshSeconds()) * 1000 : 0;
@@ -243,38 +267,85 @@
     else if (!visible) $('refreshStatus').textContent = '창을 열면 시작';
     else if (document.hidden) $('refreshStatus').textContent = '탭 비활성 · 일시중지';
     else if (reviewEditorOpen()) $('refreshStatus').textContent = '리뷰 편집 감지 · 일시중지';
+    else if (pendingImmediateRefresh) {
+      const cooldown = reloadCooldownMs();
+      $('refreshStatus').textContent = cooldown
+        ? `${pendingImmediateRefresh} · ${Math.ceil(cooldown / 1000)}초 후 갱신`
+        : `${pendingImmediateRefresh} · 새로고침 대기`;
+    }
     else if (!nextRefreshAt) $('refreshStatus').textContent = '대기 중';
-    else if (autoRunning) $('refreshStatus').textContent = '스크롤 분석 완료 대기';
-    else $('refreshStatus').textContent = '다음 확인 ' + Math.max(0,Math.ceil((nextRefreshAt-Date.now())/1000)) + '초 후';
+    else if (autoRunning) $('refreshStatus').textContent = '스크롤 중 · 조건 충족 시 즉시 갱신';
+    else $('refreshStatus').textContent = `다음 확인 ${Math.max(0,Math.ceil((nextRefreshAt-Date.now())/1000))}초 후`;
   }
   function persistAndReload() {
-    if (refreshInProgress || (isReviewTestPage() && reviewEditorOpen())) return;
+    if (refreshInProgress || !currentRefreshEnabled() || !visible || document.hidden || reviewEditorOpen()) return;
+    const wait = reloadCooldownMs();
+    if (wait > 0) {
+      nextRefreshAt = Date.now() + wait;
+      return;
+    }
     refreshInProgress = true;
     try { sessionStorage.setItem(PANEL_KEY, 'yes'); } catch (_) { }
-    if (isReviewTestPage()) { location.reload(); return; }
+    const reload = () => { markReloadNow(); location.reload(); };
+    // 리뷰 목록에는 재고 데이터가 없으므로 리뷰 상품명을 재고 기록에 저장하지 않는다.
+    if (isReviewTestPage()) { reload(); return; }
     const items = Object.fromEntries([...productCache.values()].slice(0,1200).map(p => [
       productKey(p), {remaining:p.remaining ?? null, availability:p.availability || 'unknown'}]));
     const snapshot = {seenAt:Date.now(), items};
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
-      chrome.storage.local.set({[STOCK_KEY]:snapshot}, () => location.reload());
+      chrome.storage.local.set({[STOCK_KEY]:snapshot}, reload);
     } else {
       storageSave(STOCK_KEY,snapshot);
-      location.reload();
+      reload();
     }
   }
-  setInterval(() => {
+  function clearPendingRefresh() {
+    pendingImmediateRefresh = '';
+    if (immediateRefreshTimer != null) clearTimeout(immediateRefreshTimer);
+    immediateRefreshTimer = null;
+  }
+  function flushImmediateRefresh() {
+    if (!pendingImmediateRefresh || refreshInProgress) return;
+    if (!currentRefreshEnabled() || !visible || !canRefreshHere()) {
+      clearPendingRefresh(); return;
+    }
+    if (document.hidden || reviewEditorOpen()) { updateRefreshStatus(); return; }
+    const cooldown = reloadCooldownMs();
+    if (cooldown) {
+      if (immediateRefreshTimer == null) immediateRefreshTimer = setTimeout(() => {
+        immediateRefreshTimer = null;
+        flushImmediateRefresh();
+      }, cooldown + 25);
+      updateRefreshStatus();
+      return;
+    }
+    clearPendingRefresh();
+    persistAndReload();
+  }
+  function requestImmediateRefresh(reason) {
+    // 자동 새로고침 OFF이거나 리뷰를 편집하고 있으면 스크롤을 중단하지 않는다.
+    if (!currentRefreshEnabled() || !visible || document.hidden || reviewEditorOpen()) return false;
+    pendingImmediateRefresh = reason;
+    stopAutoScroll(`${reason} · 새로고침`);
+    flushImmediateRefresh();
+    return true;
+  }
+  refreshCheckTimer = setInterval(() => {
     if (!currentRefreshEnabled() || !visible || !canRefreshHere() || document.hidden) {
       updateRefreshStatus(); return;
     }
+    if (pendingImmediateRefresh) { flushImmediateRefresh(); return; }
     if (!nextRefreshAt) armRefresh();
     if (Date.now() >= nextRefreshAt && !refreshInProgress) {
+      // 스크롤/모의 안내 팝업/리뷰 작성 중에는 새로고침하지 않는다.
       if (autoRunning || reviewEditorOpen() || (isDemoPage() && !document.querySelector('#intro')?.hidden)) {
         updateRefreshStatus(); return;
       }
-      persistAndReload(); return;
+      persistAndReload();
+      return;
     }
     updateRefreshStatus();
-  }, 1000);
+  }, 500);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) nextRefreshAt = 0;
     else armRefresh();
@@ -433,10 +504,10 @@
     const found=new Map();
     const leaves=Array.from(document.querySelectorAll('div,span,p,small,strong,em,li'));
     for (const node of leaves.slice(0,12000)) {
-      if (host.contains(node) || !isShown(node)) continue;
-      if (node.children.length && [...node.children].some(child=>stockExact.test(child.textContent?.trim() || ''))) continue;
+      // 텍스트 판정이 수천 개 DOM 노드의 레이아웃 계산보다 훨씬 빠르다.
       const text=node.textContent?.trim() || '';
-      if (!stockExact.test(text)) continue;
+      if (!stockExact.test(text) || host.contains(node) || !isShown(node)) continue;
+      if (node.children.length && [...node.children].some(child=>stockExact.test(child.textContent?.trim() || ''))) continue;
       const card=findStockCard(node);
       if (!card) continue;
       const name=readName(card);
@@ -494,14 +565,13 @@
     }
     for (const item of productCache.values()) if (item.card && !item.card.isConnected) item.card=null;
     observedCount=productCache.size;
-    // 재고나 가격 없이 키워드 매칭 정확도만 검사한다. 임의로 '신청 가능'으로 분류하지 않는다.
     const probeSettings = {...settings,priceWeight:0,minPrice:0,maxPrice:0,hideUnknownStock:false};
     ranked=scoring.rankProducts([...productCache.values()],probeSettings);
     paintHighlights();
     const leader=ranked[0];
     $('leaderName').textContent=leader ? `${leader.name} (${leader.score}점)` : '키워드에 맞는 상품이 없습니다';
     $('summary').textContent=`리뷰 작성 상품 감지 ${observedCount}개 · 키워드 통과 ${ranked.length}개 · 재고/가격 검증 불가`;
-    $('foot').textContent='리뷰 작성 테스트 · 가격/재고 미확인 · 신청과 무관 · 자동 새로고침 켜고 끌 수 있음 · 편집 중 보호';
+    $('foot').textContent=`리뷰 작성 테스트 · 가격/재고 미확인 · 자동 새로고침 ${currentRefreshEnabled() ? 'ON' : 'OFF'} · 편집 중 새로고침 보호`;
     const signature=ranked.map(p=>`${p.name}:${p.score}`).join('|')+'|review';
     if (signature===previousRanking) return;
     previousRanking=signature;
@@ -590,6 +660,20 @@
     }
     return document.scrollingElement || document.documentElement;
   }
+  function visibleSoldoutKeys(scroller) {
+    const view = scroller.getBoundingClientRect();
+    const pageScroller = scroller === document.scrollingElement || scroller === document.documentElement;
+    const top = pageScroller ? 0 : Math.max(0, view.top);
+    const bottom = pageScroller ? innerHeight : Math.min(innerHeight, view.bottom);
+    const keys = new Set();
+    for (const [key, item] of productCache) {
+      if (item.availability !== 'soldout' || !item.card?.isConnected) continue;
+      const rect = item.card.getBoundingClientRect();
+      if (rect.bottom > top + 5 && rect.top < bottom - 5 && rect.height > 0)
+        keys.add(key);
+    }
+    return keys;
+  }
   function stopAutoScroll(reason = '완료') {
     if (autoTimer != null) clearTimeout(autoTimer);
     autoTimer = null;
@@ -597,8 +681,7 @@
     $('auto').hidden = false;
     $('stop').hidden = true;
     $('scrollStatus').textContent = reason;
-    if (currentRefreshEnabled() && nextRefreshAt && Date.now() >= nextRefreshAt)
-      nextRefreshAt = Date.now() + 10000;
+    // 스크롤 완료 직후의 새로고침은 별도 조건으로 처리한다.
   }
   function startAutoScroll() {
     if (autoRunning) return;
@@ -614,6 +697,7 @@
     autoRunning = true;
     autoStepCount = 0;
     autoStalledCount = 0;
+    bottomWaitStartedAt = 0;
     $('auto').hidden = true;
     $('stop').hidden = false;
     const scroller = getScrollElement();
@@ -632,24 +716,36 @@
       const beforeTop = scroller.scrollTop;
       const beforeHeight = scroller.scrollHeight;
       const beforeCount = productCache.size;
+      // 이 단계에서 이미 화면에 보였던 품절 상품은 신규 발견으로 보지 않는다.
+      const soldoutBefore = isReviewTestPage() ? new Set() : visibleSoldoutKeys(scroller);
       const stride = Math.max(220, Math.round(scroller.clientHeight * 0.75));
       scroller.scrollTop = Math.min(beforeTop + stride, beforeHeight - scroller.clientHeight);
       autoStepCount++;
       // 첫 번째 갱신은 스크롤 직후, 두 번째 갱신은 지연 로딩 대기 후에 이루어진다.
       // 중첩 스크롤 컨테이너에도 작동하며 새 카드 발견 시 순위가 다시 정렬된다.
-      scheduleScan(100);
-      const delay = Number($('speed').value) || 1100;
+      scheduleScan(30);
+      const delay = Number($('speed').value) || 180;
       autoTimer = setTimeout(() => {
         autoTimer = null;
         if (!autoRunning) return;
         scan();
         const moved = scroller.scrollTop > beforeTop + 3;
+        // 스크롤로 새롭게 나타난 품절 상품에만 반응. 초기 화면의 품절 상품은 무시.
+        if (moved && !isReviewTestPage() && currentRefreshEnabled()) {
+          const soldoutAfter = visibleSoldoutKeys(scroller);
+          if ([...soldoutAfter].some(key => !soldoutBefore.has(key)) &&
+              requestImmediateRefresh('품절 상품 발견')) return;
+        }
         const extended = scroller.scrollHeight > beforeHeight + 3;
         const discovered = productCache.size > beforeCount;
-        autoStalledCount = (moved || extended || discovered) ? 0 : autoStalledCount + 1;
+        const stalled = !(moved || extended || discovered);
+        autoStalledCount = stalled ? autoStalledCount + 1 : 0;
+        bottomWaitStartedAt = stalled ? (bottomWaitStartedAt || Date.now()) : 0;
         $('scrollStatus').textContent = `${autoStepCount}/${MAX_SCROLL_STEPS}회 · ${productCache.size}개 발견`;
-        if (autoStalledCount >= 4) {
-          stopAutoScroll('맨 아래 도달 · 분석 완료');
+        if (autoStalledCount >= MAX_WAIT_FOR_NEW_ITEMS &&
+            Date.now() - bottomWaitStartedAt >= MIN_BOTTOM_WAIT_MS) {
+          if (!requestImmediateRefresh('목록 끝 · 신규 상품 없음'))
+            stopAutoScroll('맨 아래 도달 · 분석 완료');
           return;
         }
         tick();
@@ -805,7 +901,7 @@
     document.body.appendChild(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  function scheduleScan(delay = 140) {
+  function scheduleScan(delay = 35) {
     if (!visible || scanTimer) return;
     scanTimer = setTimeout(() => { scanTimer = null; scan(); }, delay);
   }
@@ -822,13 +918,14 @@
   observer.observe(document.body || document.documentElement, {childList:true, subtree:true, characterData:true});
   // capture=true: 쿠팡이 페이지 안에 별도 스크롤 영역을 만들어도 변화 감지.
   // 자동 스크롤은 매 단계의 상품 추출 결과를 누적해 실시간으로 순위를 갱신한다.
-  document.addEventListener('scroll', () => scheduleScan(120), { passive:true, capture:true });
-  window.addEventListener('scroll', () => scheduleScan(120), { passive:true });
+  document.addEventListener('scroll', () => scheduleScan(35), { passive:true, capture:true });
+  window.addEventListener('scroll', () => scheduleScan(35), { passive:true });
   window.addEventListener('load', scheduleScan, { once:true });
   try {
     if (sessionStorage.getItem(PANEL_KEY) === 'yes' && (isVineProductPage() || isReviewTestPage())) {
       setVisible(true);
-      setTimeout(() => { if (visible && currentRefreshEnabled() && !autoRunning && !reviewEditorOpen()) startAutoScroll(); }, 1400);
+      // 자동 새로고침이 켜진 경우, 새로 로드된 목록을 처음부터 재탐색한다.
+      setTimeout(() => { if (visible && currentRefreshEnabled() && !autoRunning && !reviewEditorOpen()) startAutoScroll(); }, 250);
     }
   } catch (_) { /* session storage blocked */ }
 })();
