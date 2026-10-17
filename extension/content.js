@@ -37,6 +37,7 @@
   let stockSaveTimer = null;
   let nextRefreshAt = 0;
   let refreshInProgress = false;
+  let reviewEditorTouched = false;
   const pageLoadedAt = new Date();
   const loadTime = pageLoadedAt.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
   const productCache = new Map();
@@ -157,11 +158,13 @@
   $('auto').addEventListener('click', startAutoScroll);
   $('stop').addEventListener('click', () => stopAutoScroll('사용자 중지'));
   $('refreshEnabled').addEventListener('change', () => {
-    settings.autoRefreshEnabled = $('refreshEnabled').checked;
+    if (isReviewTestPage()) settings.reviewAutoRefreshEnabled = $('refreshEnabled').checked;
+    else settings.autoRefreshEnabled = $('refreshEnabled').checked;
     saveRefreshPreference();
   });
   $('refreshInterval').addEventListener('change', () => {
-    settings.refreshIntervalSeconds = Number($('refreshInterval').value);
+    if (isReviewTestPage()) settings.reviewRefreshIntervalSeconds = Number($('refreshInterval').value);
+    else settings.refreshIntervalSeconds = Number($('refreshInterval').value);
     saveRefreshPreference();
   });
   $('clear').addEventListener('click', () => {
@@ -187,14 +190,39 @@
     }
   } catch (_) { /* demo without extension API */ }
 
+  // 체험단과 리뷰 작성 페이지의 자동 새로고침은 별도 ON/OFF 및 주기.
+  const canRefreshHere = () => isVineProductPage() || isReviewTestPage();
+  const currentRefreshEnabled = () => isReviewTestPage() ? Boolean(settings.reviewAutoRefreshEnabled) : Boolean(settings.autoRefreshEnabled);
+  const currentRefreshSeconds = () => isReviewTestPage() ? Number(settings.reviewRefreshIntervalSeconds) : Number(settings.refreshIntervalSeconds);
+  function reviewEditorOpen() {
+    if (!isReviewTestPage()) return false;
+    if (reviewEditorTouched) return true;
+    const inputs = document.querySelectorAll('textarea,[contenteditable="true"],[role="textbox"]');
+    for (const input of inputs) {
+      if (!host.contains(input) && isShown(input)) return true;
+    }
+    return [...document.querySelectorAll('dialog[open],[role="dialog"],[aria-modal="true"]')]
+      .some(dialog => !host.contains(dialog) && isShown(dialog) && /리뷰|평가|후기/.test(dialog.innerText || ''));
+  }
+  document.addEventListener('input', event => {
+    if (!isReviewTestPage() || host.contains(event.target)) return;
+    const el = event.target;
+    if (el.matches?.('textarea,input:not([type="hidden"]),[contenteditable="true"],[role="textbox"]') || el.closest?.('[contenteditable="true"]')) {
+      reviewEditorTouched = true;
+      updateRefreshStatus();
+    }
+  }, true);
   function syncRefreshControls() {
-    $('refreshEnabled').checked = isVineProductPage() && Boolean(settings.autoRefreshEnabled);
-    $('refreshEnabled').disabled = isReviewTestPage();
-    $('refreshInterval').disabled = isReviewTestPage();
+    const supported = canRefreshHere();
     const allowed = [30, 60, 120, 300];
-    const interval = Number(settings.refreshIntervalSeconds);
-    settings.refreshIntervalSeconds = allowed.includes(interval) ? interval : 60;
-    $('refreshInterval').value = String(settings.refreshIntervalSeconds);
+    const seconds = currentRefreshSeconds();
+    const normalized = allowed.includes(seconds) ? seconds : 60;
+    if (isReviewTestPage()) settings.reviewRefreshIntervalSeconds = normalized;
+    else settings.refreshIntervalSeconds = normalized;
+    $('refreshEnabled').checked = supported && currentRefreshEnabled();
+    $('refreshEnabled').disabled = !supported;
+    $('refreshInterval').disabled = !supported;
+    $('refreshInterval').value = String(normalized);
     updateRefreshStatus();
   }
   function saveRefreshPreference() {
@@ -204,23 +232,25 @@
     armRefresh();
   }
   function armRefresh() {
-    nextRefreshAt = visible && settings.autoRefreshEnabled && isVineProductPage() && !document.hidden
-      ? Date.now() + Math.max(MIN_REFRESH_SEC, settings.refreshIntervalSeconds) * 1000 : 0;
+    nextRefreshAt = visible && canRefreshHere() && currentRefreshEnabled() && !document.hidden
+      ? Date.now() + Math.max(MIN_REFRESH_SEC, currentRefreshSeconds()) * 1000 : 0;
     updateRefreshStatus();
   }
   function updateRefreshStatus() {
-    if (isReviewTestPage()) $('refreshStatus').textContent = '리뷰 테스트 모드 · 사용 불가';
-    else if (!settings.autoRefreshEnabled) $('refreshStatus').textContent = '꺼짐';
+    if (!canRefreshHere()) $('refreshStatus').textContent = '이 페이지에서는 지원 안 함';
+    else if (!currentRefreshEnabled()) $('refreshStatus').textContent = '꺼짐';
     else if (!visible) $('refreshStatus').textContent = '창을 열면 시작';
     else if (document.hidden) $('refreshStatus').textContent = '탭 비활성 · 일시중지';
+    else if (reviewEditorOpen()) $('refreshStatus').textContent = '리뷰 편집 감지 · 일시중지';
     else if (!nextRefreshAt) $('refreshStatus').textContent = '대기 중';
     else if (autoRunning) $('refreshStatus').textContent = '스크롤 분석 완료 대기';
-    else $('refreshStatus').textContent = `다음 확인 ${Math.max(0,Math.ceil((nextRefreshAt-Date.now())/1000))}초 후`;
+    else $('refreshStatus').textContent = '다음 확인 ' + Math.max(0,Math.ceil((nextRefreshAt-Date.now())/1000)) + '초 후';
   }
   function persistAndReload() {
-    if (refreshInProgress) return;
+    if (refreshInProgress || (isReviewTestPage() && reviewEditorOpen())) return;
     refreshInProgress = true;
     try { sessionStorage.setItem(PANEL_KEY, 'yes'); } catch (_) { }
+    if (isReviewTestPage()) { location.reload(); return; }
     const items = Object.fromEntries([...productCache.values()].slice(0,1200).map(p => [
       productKey(p), {remaining:p.remaining ?? null, availability:p.availability || 'unknown'}]));
     const snapshot = {seenAt:Date.now(), items};
@@ -232,16 +262,15 @@
     }
   }
   setInterval(() => {
-    if (!settings.autoRefreshEnabled || !visible || !isVineProductPage() || document.hidden) {
+    if (!currentRefreshEnabled() || !visible || !canRefreshHere() || document.hidden) {
       updateRefreshStatus(); return;
     }
     if (!nextRefreshAt) armRefresh();
     if (Date.now() >= nextRefreshAt && !refreshInProgress) {
-      if (autoRunning || (isDemoPage() && !document.querySelector('#intro')?.hidden)) {
+      if (autoRunning || reviewEditorOpen() || (isDemoPage() && !document.querySelector('#intro')?.hidden)) {
         updateRefreshStatus(); return;
       }
-      persistAndReload();
-      return;
+      persistAndReload(); return;
     }
     updateRefreshStatus();
   }, 1000);
@@ -457,9 +486,6 @@
     $('viewTitle').textContent = '리뷰 작성 · 인식 테스트';
     $('leaderLabel').textContent = '키워드 일치 1위';
     $('changes').hidden = true;
-    $('refreshEnabled').disabled = true;
-    $('refreshInterval').disabled = true;
-    $('refreshStatus').textContent = '리뷰 페이지에서는 비활성화';
     const products=extractReviewProducts();
     for (const item of products) {
       const key=productKey(item);
@@ -474,7 +500,7 @@
     const leader=ranked[0];
     $('leaderName').textContent=leader ? `${leader.name} (${leader.score}점)` : '키워드에 맞는 상품이 없습니다';
     $('summary').textContent=`리뷰 작성 상품 감지 ${observedCount}개 · 키워드 통과 ${ranked.length}개 · 재고/가격 검증 불가`;
-    $('foot').textContent='리뷰 작성 테스트 · 재고/가격 미확인 · 체험단 신청 가능 여부와 무관 · 자동 새로고침 없음';
+    $('foot').textContent='리뷰 작성 테스트 · 가격/재고 미확인 · 신청과 무관 · 자동 새로고침 켜고 끌 수 있음 · 편집 중 보호';
     const signature=ranked.map(p=>`${p.name}:${p.score}`).join('|')+'|review';
     if (signature===previousRanking) return;
     previousRanking=signature;
@@ -570,7 +596,7 @@
     $('auto').hidden = false;
     $('stop').hidden = true;
     $('scrollStatus').textContent = reason;
-    if (settings.autoRefreshEnabled && nextRefreshAt && Date.now() >= nextRefreshAt)
+    if (currentRefreshEnabled() && nextRefreshAt && Date.now() >= nextRefreshAt)
       nextRefreshAt = Date.now() + 10000;
   }
   function startAutoScroll() {
@@ -801,7 +827,7 @@
   try {
     if (sessionStorage.getItem(PANEL_KEY) === 'yes' && (isVineProductPage() || isReviewTestPage())) {
       setVisible(true);
-      setTimeout(() => { if (visible && settings.autoRefreshEnabled && !autoRunning) startAutoScroll(); }, 1400);
+      setTimeout(() => { if (visible && currentRefreshEnabled() && !autoRunning && !reviewEditorOpen()) startAutoScroll(); }, 1400);
     }
   } catch (_) { /* session storage blocked */ }
 })();
