@@ -176,6 +176,10 @@
     $(id).addEventListener('input', () => { $(id + 'View').textContent = $(id).value; });
   }
 
+  const canRefreshHere = () => isVineProductPage() || isReviewTestPage();
+  const currentRefreshEnabled = () => isReviewTestPage() ? Boolean(settings.reviewAutoRefreshEnabled) : Boolean(settings.autoRefreshEnabled);
+  const currentRefreshSeconds = () => isReviewTestPage() ? Number(settings.reviewRefreshIntervalSeconds) : Number(settings.refreshIntervalSeconds);
+
   // Browser extension storage only. The test page uses in-memory defaults.
   try {
     if (typeof chrome !== 'undefined' && chrome.storage?.local) {
@@ -191,9 +195,6 @@
   } catch (_) { /* demo without extension API */ }
 
   // 체험단과 리뷰 작성 페이지의 자동 새로고침은 별도 ON/OFF 및 주기.
-  const canRefreshHere = () => isVineProductPage() || isReviewTestPage();
-  const currentRefreshEnabled = () => isReviewTestPage() ? Boolean(settings.reviewAutoRefreshEnabled) : Boolean(settings.autoRefreshEnabled);
-  const currentRefreshSeconds = () => isReviewTestPage() ? Number(settings.reviewRefreshIntervalSeconds) : Number(settings.refreshIntervalSeconds);
   function reviewEditorOpen() {
     if (!isReviewTestPage()) return false;
     if (reviewEditorTouched) return true;
