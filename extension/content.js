@@ -1,4 +1,4 @@
-/* 사용자가 이미 연 쿠팡 웹화면의 DOM만 읽는다. 페이지 이동/클릭/HTTP 요청 없음. */
+/* 사용자가 연 쿠팡 화면의 DOM 분석. 자동 새로고침은 명시적으로 ON인 경우에만 페이지 reload를 실행한다. */
 (() => {
   'use strict';
   if (window.__vineHelperLoaded) return;
@@ -7,6 +7,8 @@
   const scoring = window.VineScoring;
   if (!scoring) return;
   const STORAGE_KEY = 'vineHelperSettingsV1';
+  const PANEL_KEY = 'vineHelperPanelOpenV08';
+  const MIN_REFRESH_SEC = 30;
   const STOCK_KEY = isDemoStorageKey();
   function isDemoStorageKey() { return location.protocol === 'chrome-extension:' ? 'vineHelperDemoStockV07' : 'vineHelperStockV07'; }
   const VINE_PATH = '/productreview/adventurer/productList';
@@ -30,6 +32,8 @@
   const stockChanges = new Map();
   let stockReady = false;
   let stockSaveTimer = null;
+  let nextRefreshAt = 0;
+  let refreshInProgress = false;
   const pageLoadedAt = new Date();
   const loadTime = pageLoadedAt.toLocaleTimeString('ko-KR', {hour:'2-digit', minute:'2-digit'});
   const productCache = new Map();
@@ -94,6 +98,10 @@
   .leader{display:flex;align-items:flex-start;gap:6px;border-top:1px solid #ecf1f7;background:#f0f6ff;padding:8px 13px;font-size:12px;line-height:1.5}
   .leader b{color:#1559a8;flex-shrink:0}.leader span{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .leader.changed{background:#fff0d6;transition:background 0.5s ease}
+  .refreshBar{padding:8px 13px;display:flex;align-items:center;gap:8px;background:#f7f9fd;border-top:1px solid #e6ecf5;flex-wrap:wrap}
+  .refreshBar label{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700}
+  .refreshBar select{font-size:12px;padding:5px;border:1px solid #dce3ec;border-radius:6px;background:white}
+  .refreshBar .small{flex:1;text-align:right;min-width:95px}
   .foot{padding:8px 13px;border-top:1px solid #edf1f6;color:#66758a;font-size:11px;background:#f8fafc}
   .empty{padding:25px 0;text-align:center;color:#6d788a;line-height:1.7;white-space:pre-line}
   </style>
@@ -102,6 +110,7 @@
     <div class="top"><div><h2>체험단 상품 우선순위</h2><div class="small" id="summary">화면에 표시된 상품만 분석</div></div><button class="btn" id="close">닫기 ×</button></div>
     <div class="toolbar"><button class="btn primary" id="scan">화면 다시 분석</button><button class="btn" id="options">⚙ 가중치 설정</button><button class="btn" id="export">CSV 저장</button><button class="btn" id="clear">누적 초기화</button></div>
     <div class="toolbar" style="padding-top:0"><button class="btn primary" id="auto">↡ 자동 스크롤 시작</button><button class="btn" id="stop" hidden>■ 스크롤 중지</button><label for="speed" class="small">속도</label><select id="speed" class="speed"><option value="1600">천천히</option><option value="1100" selected>보통</option><option value="750">빠르게</option></select><span id="scrollStatus" class="small">수동 시작</span></div>
+    <div class="refreshBar"><label><input id="refreshEnabled" type="checkbox"> 자동 새로고침</label><select id="refreshInterval"><option value="30">30초</option><option value="60" selected>60초</option><option value="120">2분</option><option value="300">5분</option></select><span class="small" id="refreshStatus">기본 OFF</span></div>
     <div id="leader" class="leader"><b>현재 추천 1위</b><span id="leaderName">분석 대기 중</span></div>
     <div id="changes" class="changes" hidden></div>
     <div id="results" class="results"><div class="empty">상품을 분석하려면 '다시 스캔'을 누르세요.</div></div>
@@ -110,14 +119,15 @@
       <div class="field"><label>선호 키워드 (추가 점수)</label><textarea id="preferredKeywords" rows="2"></textarea></div>
       <div class="field"><label>제외 키워드 (결과에서 완전히 숨김)</label><textarea id="excludeKeywords" rows="2"></textarea></div>
       <div class="field"><label>카테고리별 선호도 (키워드,키워드:0~100)</label><textarea id="categoryRules" rows="4"></textarea></div>
+      <div class="field"><label>가격 평가 방식</label><select id="priceMode" style="width:100%;padding:7px;background:white;border:1px solid #cbd5e1;border-radius:6px"><option value="relative">이번 목록 가격 중앙값 기준 (추천)</option><option value="target">고정 목표 가격 기준</option></select></div>
       <div class="field"><label>가격 가중치</label><div class="range"><input id="priceWeight" type="range" min="0" max="100"><span id="priceWeightView"></span></div></div>
       <div class="field"><label>선호 키워드 가중치</label><div class="range"><input id="keywordWeight" type="range" min="0" max="100"><span id="keywordWeightView"></span></div></div>
       <div class="field"><label>카테고리 가중치</label><div class="range"><input id="categoryWeight" type="range" min="0" max="100"><span id="categoryWeightView"></span></div></div>
-      <div class="double"><div class="field"><label>가격 점수 만점 기준(원)</label><input id="preferredPrice" type="number" min="1000" step="10000"></div><div class="field"><label>최저 가격 필터(원)</label><input id="minPrice" type="number" min="0" step="10000"></div></div>
+      <div class="double"><div class="field"><label>고정 모드 목표가격(원)</label><input id="preferredPrice" type="number" min="1000" step="10000"></div><div class="field"><label>최저 가격 필터(원)</label><input id="minPrice" type="number" min="0" step="10000"></div></div>
       <div class="double"><div class="field"><label>최고 가격 필터(원, 0=제한 없음)</label><input id="maxPrice" type="number" min="0" step="10000"></div><div class="field"><label style="margin-top:21px"><input id="hideUnavailable" type="checkbox" checked disabled> 모두 소진은 항상 제외</label></div></div>
       <button id="save" class="btn primary">설정 저장하고 다시 계산</button> <button id="reset" class="btn">기본값으로 초기화</button>
     </div>
-    <div class="foot" id="foot">재고는 마지막 페이지 새로고침 기준 · 자동 새로고침/신청 없음</div>
+    <div class="foot" id="foot">재고는 마지막 새로고침 기준 · 자동 새로고침 기본 OFF · 신청은 휴대폰에서 직접</div>
   </div>`;
   document.documentElement.appendChild(host);
 
@@ -126,8 +136,9 @@
     visible = open;
     $('panel').hidden = !open;
     $('launch').hidden = open;
-    if (open) { previousRanking = ''; scan(); }
-    else stopAutoScroll('분석 창 닫음');
+    try { sessionStorage.setItem(PANEL_KEY, open ? 'yes' : 'no'); } catch (_) { }
+    if (open) { previousRanking = ''; scan(); armRefresh(); }
+    else { stopAutoScroll('분석 창 닫음'); nextRefreshAt = 0; updateRefreshStatus(); }
   };
   $('launch').addEventListener('click', () => setVisible(true));
   $('close').addEventListener('click', () => setVisible(false));
@@ -142,6 +153,14 @@
   $('export').addEventListener('click', exportCsv);
   $('auto').addEventListener('click', startAutoScroll);
   $('stop').addEventListener('click', () => stopAutoScroll('사용자 중지'));
+  $('refreshEnabled').addEventListener('change', () => {
+    settings.autoRefreshEnabled = $('refreshEnabled').checked;
+    saveRefreshPreference();
+  });
+  $('refreshInterval').addEventListener('change', () => {
+    settings.refreshIntervalSeconds = Number($('refreshInterval').value);
+    saveRefreshPreference();
+  });
   $('clear').addEventListener('click', () => {
     productCache.clear(); clearHighlights(); previousRanking = ''; previousLeader = '';
     rankUpdateCount = 0; scan();
@@ -158,10 +177,72 @@
         const saved = data && data[STORAGE_KEY];
         if (saved && typeof saved === 'object') settings = { ...settings, ...saved };
         if (settingsOpen) fillSettings();
+        syncRefreshControls();
+        armRefresh();
         if (visible) scan();
       });
     }
   } catch (_) { /* demo without extension API */ }
+
+  function syncRefreshControls() {
+    $('refreshEnabled').checked = Boolean(settings.autoRefreshEnabled);
+    const allowed = [30, 60, 120, 300];
+    const interval = Number(settings.refreshIntervalSeconds);
+    settings.refreshIntervalSeconds = allowed.includes(interval) ? interval : 60;
+    $('refreshInterval').value = String(settings.refreshIntervalSeconds);
+    updateRefreshStatus();
+  }
+  function saveRefreshPreference() {
+    syncRefreshControls();
+    try { if (typeof chrome !== 'undefined' && chrome.storage?.local) chrome.storage.local.set({[STORAGE_KEY]:settings}); }
+    catch (_) { if (isDemoPage()) localStorage.setItem(STORAGE_KEY, JSON.stringify(settings)); }
+    armRefresh();
+  }
+  function armRefresh() {
+    nextRefreshAt = visible && settings.autoRefreshEnabled && isVineProductPage() && !document.hidden
+      ? Date.now() + Math.max(MIN_REFRESH_SEC, settings.refreshIntervalSeconds) * 1000 : 0;
+    updateRefreshStatus();
+  }
+  function updateRefreshStatus() {
+    if (!settings.autoRefreshEnabled) $('refreshStatus').textContent = '꺼짐';
+    else if (!visible) $('refreshStatus').textContent = '창을 열면 시작';
+    else if (document.hidden) $('refreshStatus').textContent = '탭 비활성 · 일시중지';
+    else if (!nextRefreshAt) $('refreshStatus').textContent = '대기 중';
+    else if (autoRunning) $('refreshStatus').textContent = '스크롤 분석 완료 대기';
+    else $('refreshStatus').textContent = `다음 확인 ${Math.max(0,Math.ceil((nextRefreshAt-Date.now())/1000))}초 후`;
+  }
+  function persistAndReload() {
+    if (refreshInProgress) return;
+    refreshInProgress = true;
+    try { sessionStorage.setItem(PANEL_KEY, 'yes'); } catch (_) { }
+    const items = Object.fromEntries([...productCache.values()].slice(0,1200).map(p => [
+      productKey(p), {remaining:p.remaining ?? null, availability:p.availability || 'unknown'}]));
+    const snapshot = {seenAt:Date.now(), items};
+    if (typeof chrome !== 'undefined' && chrome.storage?.local) {
+      chrome.storage.local.set({[STOCK_KEY]:snapshot}, () => location.reload());
+    } else {
+      storageSave(STOCK_KEY,snapshot);
+      location.reload();
+    }
+  }
+  setInterval(() => {
+    if (!settings.autoRefreshEnabled || !visible || !isVineProductPage() || document.hidden) {
+      updateRefreshStatus(); return;
+    }
+    if (!nextRefreshAt) armRefresh();
+    if (Date.now() >= nextRefreshAt && !refreshInProgress) {
+      if (autoRunning || (isDemoPage() && !document.querySelector('#intro')?.hidden)) {
+        updateRefreshStatus(); return;
+      }
+      persistAndReload();
+      return;
+    }
+    updateRefreshStatus();
+  }, 1000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) nextRefreshAt = 0;
+    else armRefresh();
+  });
 
   function storageFetch(key, cb) {
     try {
@@ -224,6 +305,7 @@
     },600);
   }
   function fillSettings() {
+    $('priceMode').value = settings.priceMode === 'target' ? 'target' : 'relative';
     for (const id of ['priorityKeywords','preferredKeywords','excludeKeywords','categoryRules',
                       'priceWeight','keywordWeight','categoryWeight','preferredPrice','minPrice','maxPrice']) {
       $(id).value = settings[id];
@@ -235,6 +317,7 @@
     const fields = ['priorityKeywords','preferredKeywords','excludeKeywords','categoryRules'];
     const numbers = ['priceWeight','keywordWeight','categoryWeight','preferredPrice','minPrice','maxPrice'];
     for (const id of fields) settings[id] = $(id).value;
+    settings.priceMode = $('priceMode').value;
     for (const id of numbers) settings[id] = Math.max(0, Number($(id).value) || 0);
     settings.hideUnavailable = true;
     try { if (typeof chrome !== 'undefined' && chrome.storage?.local) chrome.storage.local.set({ [STORAGE_KEY]: settings }); } catch (_) { }
@@ -398,6 +481,8 @@
     $('auto').hidden = false;
     $('stop').hidden = true;
     $('scrollStatus').textContent = reason;
+    if (settings.autoRefreshEnabled && nextRefreshAt && Date.now() >= nextRefreshAt)
+      nextRefreshAt = Date.now() + 10000;
   }
   function startAutoScroll() {
     if (autoRunning) return;
@@ -487,10 +572,10 @@
       $('summary').textContent = '감지 0개 · 쿠팡체험단 상품 미공개';
       $('results').replaceChildren(mk('div', {class:'empty'},
         '현재 쿠팡체험단 상품이 없습니다.\n상품 목록이 공개된 후 다시 스캔해 주세요.'));
-      $('foot').textContent = '자동 새로고침 없음 · 재고는 쿠팡 페이지를 직접 새로고침해야 바뀜';
+      $('foot').textContent = `상품 미공개 · 자동 새로고침 ${settings.autoRefreshEnabled ? 'ON' : 'OFF'} · 마지막 로드 ${loadTime}`;
       return;
     }
-    $('foot').textContent = isDemoPage() ? `테스트 화면 · 페이지 로드 ${loadTime} · 다음 재고는 F5 후 반영` : `마지막 새로고침 ${loadTime} 기준 · 수량은 자동 갱신되지 않음 · 신청/자동 새로고침 없음`;
+    $('foot').textContent = `${isDemoPage() ? '모의 테스트' : '쿠팡 페이지'} · 마지막 로드 ${loadTime} · 재고는 새로고침 기준 · 자동 새로고침 ${settings.autoRefreshEnabled ? 'ON' : 'OFF'}`;
     const products = extractProducts();
     for (const product of products) {
       const key = productKey(product);
@@ -524,7 +609,8 @@
     }
     const availableCount = [...productCache.values()].filter(p => p.availability === 'available').length;
     const soldCount = [...productCache.values()].filter(p => p.availability === 'soldout').length;
-    $('summary').textContent = `목록 ${observedCount}개 · 신청 가능 ${availableCount} · 모두 소진 ${soldCount} · 추천 ${ranked.length}`;
+    const pc = scoring.priceContext([...productCache.values()], settings);
+    $('summary').textContent = `목록 ${observedCount}개 · 신청 가능 ${availableCount} · 추천 ${ranked.length} · 가격대 ${pc.bandLabel}`;
     // 순서가 달라질 때만 목록을 다시 만든다. 스크롤 중에도 별도 순위 창이 튀지 않는다.
     if (!changed) return;
     const resultArea = $('results');
@@ -604,4 +690,10 @@
   document.addEventListener('scroll', () => scheduleScan(120), { passive:true, capture:true });
   window.addEventListener('scroll', () => scheduleScan(120), { passive:true });
   window.addEventListener('load', scheduleScan, { once:true });
+  try {
+    if (sessionStorage.getItem(PANEL_KEY) === 'yes' && isVineProductPage()) {
+      setVisible(true);
+      setTimeout(() => { if (visible && settings.autoRefreshEnabled && !autoRunning) startAutoScroll(); }, 1400);
+    }
+  } catch (_) { /* session storage blocked */ }
 })();
