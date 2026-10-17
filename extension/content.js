@@ -10,6 +10,8 @@
   const PANEL_KEY = 'vineHelperPanelOpenV08';
   const MIN_REFRESH_SEC = 5;
   const LOCATION_REFRESH_PAUSE_MS = 30_000;
+  const DISPLAY_RANK_LIMIT = 10;
+  const rankTier = rank => rank <= 3 ? 'red' : rank <= 5 ? 'orange' : 'blue';
   const REFRESH_SECONDS = [5, 10, 15, 20, 30];
   const LAST_REFRESH_KEY = 'vineHelperLastReloadV083';
   const MAX_WAIT_FOR_NEW_ITEMS = 4; // 지연 로딩 목록이 나타날 기회 보장
@@ -64,14 +66,19 @@
   const highlightCss = document.createElement('style');
   highlightCss.id = 'vine-helper-highlight-style';
   highlightCss.textContent = `
-    .${CARD_CLASS} { position:relative!important; outline:2px solid #2774ce!important; outline-offset:-2px!important; }
-    .${CARD_CLASS}[data-vine-helper-top="true"] { outline:3px solid #e9a228!important; }
+    .${CARD_CLASS} { position:relative!important; outline:2px solid #1761c2!important; outline-offset:-2px!important; }
+    .${CARD_CLASS}[data-vine-helper-tier="red"] { outline:3px solid #c62828!important; }
+    .${CARD_CLASS}[data-vine-helper-tier="orange"] { outline:3px solid #c2640c!important; }
+    .${CARD_CLASS}[data-vine-helper-tier="blue"] { outline:2px solid #1761c2!important; }
     .${MARKER_CLASS} { position:absolute!important;right:5px!important;top:5px!important;
       display:block!important;width:max-content!important;max-width:90%!important;
-      z-index:2147483600!important;background:#1253a6!important;color:#fff!important;
+      z-index:2147483600!important;background:#1761c2!important;color:#fff!important;
       font:700 12px/1.4 'Malgun Gothic',Arial,sans-serif!important;letter-spacing:0!important;
       padding:5px 8px!important;border-radius:7px!important;box-shadow:0 2px 8px #0003!important;
       pointer-events:none!important;white-space:normal!important;text-align:left!important; }
+    .${CARD_CLASS}[data-vine-helper-tier="red"] > .${MARKER_CLASS} { background:#c62828!important; }
+    .${CARD_CLASS}[data-vine-helper-tier="orange"] > .${MARKER_CLASS} { background:#c2640c!important; }
+    .${CARD_CLASS}[data-vine-helper-tier="blue"] > .${MARKER_CLASS} { background:#1761c2!important; }
     .${CARD_CLASS}[data-vine-helper-top="true"] > .${MARKER_CLASS} { background:#9c5a00!important; }
   `;
   (document.head || document.documentElement).appendChild(highlightCss);
@@ -92,7 +99,10 @@
   .btn.primary{background:#1761c2;border-color:#1761c2;color:white;font-weight:700}
   .results{overflow:auto;flex:1;min-height:85px;max-height:390px;padding:3px 13px 14px}
   .product{border-bottom:1px solid #eff1f5;padding:9px 0;display:flex;gap:10px;align-items:start}
-  .rank{flex:0 0 33px;text-align:center;font-weight:800;color:#1761c2;font-size:14px}
+  .rank{flex:0 0 33px;text-align:center;font-weight:800;color:#fff;font-size:14px;border-radius:7px;padding:5px 2px;background:#1761c2}
+  .product.tier-red .rank{background:#c62828}
+  .product.tier-orange .rank{background:#c2640c}
+  .product.tier-blue .rank{background:#1761c2}
   .info{flex:1;min-width:0}.name{font-weight:700;word-break:break-all;line-height:1.5}
   .meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:5px;font-size:12px}.price{color:#d14b20;font-weight:700}
   .pill{font-size:10px;background:#e9f1ff;color:#1a5ab3;border-radius:6px;padding:2px 5px}
@@ -124,7 +134,7 @@
   <button id="launch" class="launcher">🔎 상품 분석</button>
   <div id="panel" class="panel" hidden>
     <div class="top"><div><h2 id="viewTitle">체험단 상품 우선순위</h2><div class="small" id="summary">화면에 표시된 상품만 분석</div></div><button class="btn" id="close">닫기 ×</button></div>
-    <div class="toolbar"><button class="btn primary" id="scan">화면 다시 분석</button><button class="btn" id="options">⚙ 가중치 설정</button><button class="btn" id="export">CSV 저장</button><button class="btn" id="clear">누적 초기화</button></div>
+    <div class="toolbar"><button class="btn primary" id="scan">화면 다시 분석</button><button class="btn" id="options">⚙ 가중치 설정</button><button class="btn" id="clear">누적 초기화</button></div>
     <div class="toolbar" style="padding-top:0"><button class="btn primary" id="auto">↡ 자동 스크롤 시작</button><button class="btn" id="stop" hidden>■ 스크롤 중지</button><label for="speed" class="small">속도</label><select id="speed" class="speed"><option value="850">안정</option><option value="350">빠름</option><option value="180" selected>고속</option></select><span id="scrollStatus" class="small">수동 시작</span></div>
     <div class="refreshBar"><label><input id="refreshEnabled" type="checkbox"> 자동 새로고침</label><select id="refreshInterval"><option value="5">5초</option><option value="10">10초</option><option value="15" selected>15초</option><option value="20">20초</option><option value="30">30초</option></select><span class="small" id="refreshStatus">기본 OFF</span></div>
     <div id="leader" class="leader"><b id="leaderLabel">현재 추천 1위</b><span id="leaderName">분석 대기 중</span></div>
@@ -166,7 +176,6 @@
   });
   $('save').addEventListener('click', saveSettings);
   $('reset').addEventListener('click', () => { settings = { ...scoring.DEFAULT_SETTINGS }; fillSettings(); saveSettings(); });
-  $('export').addEventListener('click', exportCsv);
   $('auto').addEventListener('click', startAutoScroll);
   $('stop').addEventListener('click', () => stopAutoScroll('사용자 중지'));
   $('refreshEnabled').addEventListener('change', () => {
@@ -583,9 +592,9 @@
     paintHighlights();
     const leader=ranked[0];
     $('leaderName').textContent=leader ? `${leader.name} (${leader.score}점)` : '키워드에 맞는 상품이 없습니다';
-    $('summary').textContent=`리뷰 작성 상품 감지 ${observedCount}개 · 키워드 통과 ${ranked.length}개 · 재고/가격 검증 불가`;
+    $('summary').textContent=`리뷰 작성 상품 감지 ${observedCount}개 · 상위 ${Math.min(DISPLAY_RANK_LIMIT, ranked.length)}개 표시 · 전체 후보 ${ranked.length}개`;
     $('foot').textContent=`리뷰 작성 테스트 · 가격/재고 미확인 · 자동 새로고침 ${currentRefreshEnabled() ? 'ON' : 'OFF'} · 편집 중 새로고침 보호`;
-    const signature=ranked.map(p=>`${p.name}:${p.score}`).join('|')+'|review';
+    const signature=ranked.slice(0,DISPLAY_RANK_LIMIT).map(p=>`${p.name}:${p.score}`).join('|')+'|review';
     if (signature===previousRanking) return;
     previousRanking=signature;
     const area=$('results'),scroll=area.scrollTop;
@@ -596,8 +605,8 @@
         : '리뷰 작성 상품을 인식하지 못했어요. 목록을 스크롤하거나 화면을 다시 분석해 주세요. 실제 쿠팡 HTML 구조에 맞춰 조정이 필요할 수 있습니다.'));
       return;
     }
-    for (const [i,p] of ranked.slice(0,100).entries()) {
-      const item=mk('div',{class:'product'});
+    for (const [i,p] of ranked.slice(0,DISPLAY_RANK_LIMIT).entries()) {
+      const item=mk('div',{class:`product tier-${rankTier(i+1)}`});
       const number=mk('div',{class:'rank'},String(i+1));
       const info=mk('div',{class:'info'});
       info.append(mk('div',{class:'name'},p.name),
@@ -618,7 +627,7 @@
     for (const card of decoratedCards) {
       if (card.isConnected) {
         card.classList.remove(CARD_CLASS);
-        delete card.dataset.vineHelperTop;
+        delete card.dataset.vineHelperTier;
         for (const badge of card.querySelectorAll('.' + MARKER_CLASS)) badge.remove();
       }
     }
@@ -626,7 +635,7 @@
   }
   function paintHighlights() {
     const wanted = new Map();
-    ranked.slice(0, 10).forEach((product, index) => {
+    ranked.slice(0, DISPLAY_RANK_LIMIT).forEach((product, index) => {
       const card = product.card;
       if (card?.isConnected && !card.contains(host) && !wanted.has(card)) {
         wanted.set(card, {rank:index+1,product});
@@ -636,7 +645,7 @@
       if (!card.isConnected || !wanted.has(card)) {
         if (card.isConnected) {
           card.classList.remove(CARD_CLASS);
-          delete card.dataset.vineHelperTop;
+          delete card.dataset.vineHelperTier;
           card.querySelectorAll('.' + MARKER_CLASS).forEach(x => x.remove());
         }
         decoratedCards.delete(card);
@@ -644,8 +653,7 @@
     }
     for (const [card, {rank,product}] of wanted) {
       card.classList.add(CARD_CLASS);
-      if (rank <= 3) card.dataset.vineHelperTop = 'true';
-      else delete card.dataset.vineHelperTop;
+      card.dataset.vineHelperTier = rankTier(rank);
       let badge = [...card.children].find(el => el.classList?.contains(MARKER_CLASS));
       if (!badge) {
         badge = mk('div',{class:MARKER_CLASS});
@@ -828,7 +836,7 @@
     paintHighlights();
     const leader = ranked[0];
     const leaderKey = leader ? `${leader.name}|${leader.price}|${leader.score}` : '';
-    const orderSignature = ranked.map(p => `${p.name}:${p.price}:${p.score}`).join('|');
+    const orderSignature = ranked.slice(0,DISPLAY_RANK_LIMIT).map(p => `${p.name}:${p.price}:${p.score}`).join('|');
     const changed = previousRanking !== orderSignature;
     if (changed) {
       rankUpdateCount++;
@@ -841,7 +849,7 @@
     const availableCount = [...productCache.values()].filter(p => p.availability === 'available').length;
     const soldCount = [...productCache.values()].filter(p => p.availability === 'soldout').length;
     const pc = scoring.priceContext([...productCache.values()], settings);
-    $('summary').textContent = `목록 ${observedCount}개 · 신청 가능 ${availableCount} · 추천 ${ranked.length} · 가격대 ${pc.bandLabel}`;
+    $('summary').textContent = `목록 ${observedCount}개 · 신청 가능 ${availableCount} · 추천 TOP ${Math.min(DISPLAY_RANK_LIMIT,ranked.length)} · 가격대 ${pc.bandLabel}`;
     // 순서가 달라질 때만 목록을 다시 만든다. 스크롤 중에도 별도 순위 창이 튀지 않는다.
     if (!changed) return;
     const resultArea = $('results');
@@ -853,8 +861,8 @@
         '상품을 찾지 못했어요. 체험단 상품 목록에서 직접 스크롤한 후 다시 스캔해 보세요.\nPC 사이트의 실제 상품 구조에 따라 인식 보정이 필요할 수 있어요.'));
       return;
     }
-    for (const [index, product] of ranked.slice(0, 100).entries()) {
-      const item = mk('div', { class:'product' });
+    for (const [index, product] of ranked.slice(0, DISPLAY_RANK_LIMIT).entries()) {
+      const item = mk('div', { class:`product tier-${rankTier(index+1)}` });
       const rankEl = mk('div', { class:'rank' }, String(index + 1));
       const info = mk('div', { class:'info' });
       const nameEl = mk('div', { class:'name' }, product.name);
@@ -882,38 +890,13 @@
       item.append(rankEl, info, jump, copy);
       resultArea.appendChild(item);
     }
-    if (ranked.length > 100) resultArea.appendChild(mk('div', { class:'small' }, `상위 100개만 표시 중 (총 ${ranked.length}개)`));
+    // 전체 목록은 분석하되 화면에는 TOP 10만 표시.
     resultArea.scrollTop = prevListScroll;
   }
   function fallbackCopy(text) {
     const textarea = document.createElement('textarea');
     textarea.value = text; document.body.appendChild(textarea); textarea.select();
     try { document.execCommand('copy'); } finally { textarea.remove(); }
-  }
-  function exportCsv() {
-    if (!ranked.length) return;
-    if (isReviewTestPage()) {
-      const quote = v => '"' + String(v == null ? '' : v).replaceAll('"', '""') + '"';
-      const lines = [['테스트순위','리뷰작성 상품명','키워드 점수','판단근거'],
-        ...ranked.map((p,i)=>[i+1,p.name,p.score,p.reasons.join(' / ')])];
-      const blob = new Blob(['\ufeff' + lines.map(row=>row.map(quote).join(',')).join('\r\n')],
-        {type:'text/csv;charset=utf-8'});
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href=url; link.download='리뷰상품_인식테스트.csv';
-      document.body.appendChild(link); link.click(); link.remove();
-      setTimeout(()=>URL.revokeObjectURL(url),1000);
-      return;
-    }
-    const quote = v => '"' + String(v == null ? '' : v).replaceAll('"', '""') + '"';
-    const rows = [['순위','상품명','가격(원)','재고상태','남은수량','점수','판단근거','링크'],
-      ...ranked.map((p,i) => [i+1,p.name,p.price || '',stockLabel(p),p.remaining ?? '',p.score,p.reasons.join(' / '),p.url])];
-    const csv = '\ufeff' + rows.map(r => r.map(quote).join(',')).join('\r\n');
-    const blob = new Blob([csv], {type:'text/csv;charset=utf-8'});
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a'); link.href = url; link.download = '체험단_우선순위.csv';
-    document.body.appendChild(link); link.click(); link.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
   function scheduleScan(delay = 35) {
     if (!visible || scanTimer) return;
