@@ -12,6 +12,9 @@
   const STOCK_KEY = isDemoStorageKey();
   function isDemoStorageKey() { return location.protocol === 'chrome-extension:' ? 'vineHelperDemoStockV07' : 'vineHelperStockV07'; }
   const VINE_PATH = '/productreview/adventurer/productList';
+  const REVIEW_PATH = '/productreview/reviewable';
+  const isReviewTestPage = () => location.hostname === 'my.coupang.com' &&
+    location.pathname.replace(/\/$/, '') === REVIEW_PATH;
   // 설치된 확장 프로그램 내부의 오프라인 테스트 페이지 외에는 기존 쿠팡 목록만 분석한다.
   const isDemoPage = () => location.protocol === 'chrome-extension:' &&
     location.pathname === '/test/demo.html';
@@ -107,11 +110,11 @@
   </style>
   <button id="launch" class="launcher">🔎 상품 분석</button>
   <div id="panel" class="panel" hidden>
-    <div class="top"><div><h2>체험단 상품 우선순위</h2><div class="small" id="summary">화면에 표시된 상품만 분석</div></div><button class="btn" id="close">닫기 ×</button></div>
+    <div class="top"><div><h2 id="viewTitle">체험단 상품 우선순위</h2><div class="small" id="summary">화면에 표시된 상품만 분석</div></div><button class="btn" id="close">닫기 ×</button></div>
     <div class="toolbar"><button class="btn primary" id="scan">화면 다시 분석</button><button class="btn" id="options">⚙ 가중치 설정</button><button class="btn" id="export">CSV 저장</button><button class="btn" id="clear">누적 초기화</button></div>
     <div class="toolbar" style="padding-top:0"><button class="btn primary" id="auto">↡ 자동 스크롤 시작</button><button class="btn" id="stop" hidden>■ 스크롤 중지</button><label for="speed" class="small">속도</label><select id="speed" class="speed"><option value="1600">천천히</option><option value="1100" selected>보통</option><option value="750">빠르게</option></select><span id="scrollStatus" class="small">수동 시작</span></div>
     <div class="refreshBar"><label><input id="refreshEnabled" type="checkbox"> 자동 새로고침</label><select id="refreshInterval"><option value="30">30초</option><option value="60" selected>60초</option><option value="120">2분</option><option value="300">5분</option></select><span class="small" id="refreshStatus">기본 OFF</span></div>
-    <div id="leader" class="leader"><b>현재 추천 1위</b><span id="leaderName">분석 대기 중</span></div>
+    <div id="leader" class="leader"><b id="leaderLabel">현재 추천 1위</b><span id="leaderName">분석 대기 중</span></div>
     <div id="changes" class="changes" hidden></div>
     <div id="results" class="results"><div class="empty">상품을 분석하려면 '다시 스캔'을 누르세요.</div></div>
     <div id="settings" class="settings" hidden>
@@ -185,7 +188,9 @@
   } catch (_) { /* demo without extension API */ }
 
   function syncRefreshControls() {
-    $('refreshEnabled').checked = Boolean(settings.autoRefreshEnabled);
+    $('refreshEnabled').checked = isVineProductPage() && Boolean(settings.autoRefreshEnabled);
+    $('refreshEnabled').disabled = isReviewTestPage();
+    $('refreshInterval').disabled = isReviewTestPage();
     const allowed = [30, 60, 120, 300];
     const interval = Number(settings.refreshIntervalSeconds);
     settings.refreshIntervalSeconds = allowed.includes(interval) ? interval : 60;
@@ -204,7 +209,8 @@
     updateRefreshStatus();
   }
   function updateRefreshStatus() {
-    if (!settings.autoRefreshEnabled) $('refreshStatus').textContent = '꺼짐';
+    if (isReviewTestPage()) $('refreshStatus').textContent = '리뷰 테스트 모드 · 사용 불가';
+    else if (!settings.autoRefreshEnabled) $('refreshStatus').textContent = '꺼짐';
     else if (!visible) $('refreshStatus').textContent = '창을 열면 시작';
     else if (document.hidden) $('refreshStatus').textContent = '탭 비활성 · 일시중지';
     else if (!nextRefreshAt) $('refreshStatus').textContent = '대기 중';
@@ -416,6 +422,86 @@
     }
     return [...found.values()];
   }
+  // 리뷰 작성 목록은 체험단 상품이 아니다. DOM 인식/스크롤/키워드 검증 전용으로만 사용한다.
+  function extractReviewProducts() {
+    if (!isReviewTestPage()) return [];
+    const found = new Map();
+    const leaves = [...document.querySelectorAll('a,button,span,div,strong')].slice(0,16000);
+    for (const leaf of leaves) {
+      if (leaf.children.length || host.contains(leaf) || !isShown(leaf)) continue;
+      if (!/^리뷰\s*작성하기$/.test((leaf.textContent || '').trim())) continue;
+      let card = null;
+      for (let node=leaf.parentElement, depth=0; node && node!==document.body && depth<10;
+           node=node.parentElement,depth++) {
+        if (node.contains(host)) break;
+        const txt = node.innerText || '';
+        if (txt.length > 1400 || !node.querySelector('img')) continue;
+        if ((txt.match(/리뷰\s*작성하기/g) || []).length !== 1) continue;
+        if (txt.trim().length < 15 || !isShown(node)) continue;
+        card = node;
+        break;
+      }
+      if (!card) continue;
+      const explicit = card.querySelector('[class*="product-name"],[class*="productName"],[class*="product-title"],[class*="productTitle"],[class*="item-name"],[class*="itemName"]');
+      const lines = (card.innerText || '').split(/\n+/).map(x=>x.trim()).filter(Boolean)
+        .filter(line => !/^리뷰\s*작성하기$|^숨기기$|^\d{4}\.\d{2}\.\d{2}.*(배송|주문)|^쿠팡체험단$/.test(line));
+      const name = cleanName(explicit?.textContent || lines[0] || card.querySelector('img[alt]')?.alt);
+      if (name.length < 5 || /리뷰\s*작성/.test(name)) continue;
+      const key = name.toLocaleLowerCase('ko-KR').replace(/\s+/g,' ').trim();
+      if (!found.has(key)) found.set(key,{name,price:0,availability:'review-test',remaining:null,card,itemIndex:null,url:''});
+    }
+    return [...found.values()];
+  }
+
+  function scanReviewable() {
+    $('viewTitle').textContent = '리뷰 작성 · 인식 테스트';
+    $('leaderLabel').textContent = '키워드 일치 1위';
+    $('changes').hidden = true;
+    $('refreshEnabled').disabled = true;
+    $('refreshInterval').disabled = true;
+    $('refreshStatus').textContent = '리뷰 페이지에서는 비활성화';
+    const products=extractReviewProducts();
+    for (const item of products) {
+      const key=productKey(item);
+      productCache.set(key,{...productCache.get(key),...item});
+    }
+    for (const item of productCache.values()) if (item.card && !item.card.isConnected) item.card=null;
+    observedCount=productCache.size;
+    // 재고나 가격 없이 키워드 매칭 정확도만 검사한다. 임의로 '신청 가능'으로 분류하지 않는다.
+    const probeSettings = {...settings,priceWeight:0,minPrice:0,maxPrice:0,hideUnknownStock:false};
+    ranked=scoring.rankProducts([...productCache.values()],probeSettings);
+    paintHighlights();
+    const leader=ranked[0];
+    $('leaderName').textContent=leader ? `${leader.name} (${leader.score}점)` : '키워드에 맞는 상품이 없습니다';
+    $('summary').textContent=`리뷰 작성 상품 감지 ${observedCount}개 · 키워드 통과 ${ranked.length}개 · 재고/가격 검증 불가`;
+    $('foot').textContent='리뷰 작성 테스트 · 재고/가격 미확인 · 체험단 신청 가능 여부와 무관 · 자동 새로고침 없음';
+    const signature=ranked.map(p=>`${p.name}:${p.score}`).join('|')+'|review';
+    if (signature===previousRanking) return;
+    previousRanking=signature;
+    const area=$('results'),scroll=area.scrollTop;
+    area.replaceChildren();
+    if (!ranked.length) {
+      area.appendChild(mk('div',{class:'empty'},observedCount
+        ? '상품명은 읽었으나 모두 제외 키워드에 해당합니다.'
+        : '리뷰 작성 상품을 인식하지 못했어요. 목록을 스크롤하거나 화면을 다시 분석해 주세요. 실제 쿠팡 HTML 구조에 맞춰 조정이 필요할 수 있습니다.'));
+      return;
+    }
+    for (const [i,p] of ranked.slice(0,100).entries()) {
+      const item=mk('div',{class:'product'});
+      const number=mk('div',{class:'rank'},String(i+1));
+      const info=mk('div',{class:'info'});
+      info.append(mk('div',{class:'name'},p.name),
+        mk('div',{class:'meta'},'리뷰 상품 테스트 · 가격 및 재고 정보 없음'),
+        mk('div',{class:'reason'},p.reasons.join(' · ')||'기본 순서'));
+      const locate=mk('button',{class:'copy'},'위치');
+      locate.disabled=!p.card?.isConnected;
+      locate.addEventListener('click',()=>{if(!p.card?.isConnected)return;stopAutoScroll('상품 위치 보기');p.card.scrollIntoView({behavior:'smooth',block:'center'});});
+      item.append(number,info,locate);
+      area.appendChild(item);
+    }
+    area.scrollTop=scroll;
+  }
+
   // 상품 카드 상단에 보조 프로그램 전용 순위 배지를 삽입한다.
   // 쿠팡 상품이나 신청 버튼을 누르지 않으며, 제외된 상품도 화면에서 숨기지 않는다.
   function clearHighlights() {
@@ -455,7 +541,9 @@
         badge = mk('div',{class:MARKER_CLASS});
         card.appendChild(badge);
       }
-      const text = `${rank <= 3 ? '★ ' : ''}추천 ${rank}위 · ${product.score}점`;
+      const text = isReviewTestPage()
+        ? `${rank <= 3 ? '★ ' : ''}리뷰 테스트 ${rank}위 · ${product.score}점`
+        : `${rank <= 3 ? '★ ' : ''}추천 ${rank}위 · ${product.score}점`;
       if (badge.textContent !== text) badge.textContent = text;
       const description = product.reasons.join(' · ') || '기본 점수';
       if (badge.title !== description) badge.title = description;
@@ -464,7 +552,8 @@
   }
 
   function getScrollElement() {
-    const firstCard = extractProducts().find(p => p.card?.isConnected)?.card;
+    const firstCard = (isReviewTestPage() ? extractReviewProducts() : extractProducts())
+      .find(p => p.card?.isConnected)?.card;
     if (firstCard) {
       for (let parent = firstCard.parentElement; parent && parent !== document.body; parent = parent.parentElement) {
         const style = getComputedStyle(parent);
@@ -486,11 +575,11 @@
   }
   function startAutoScroll() {
     if (autoRunning) return;
-    if (!isVineProductPage()) {
-      $('scrollStatus').textContent = '체험단 페이지에서만 가능';
+    if (!isVineProductPage() && !isReviewTestPage()) {
+      $('scrollStatus').textContent = '체험단 또는 리뷰 목록에서만 가능';
       return;
     }
-    if (hasNoProductsNotice()) {
+    if (!isReviewTestPage() && hasNoProductsNotice()) {
       scan();
       $('scrollStatus').textContent = '상품이 아직 없음';
       return;
@@ -505,7 +594,7 @@
     scan();
     const tick = () => {
       if (!autoRunning) return;
-      if (!visible || !isVineProductPage() || hasNoProductsNotice()) {
+      if (!visible || (!isVineProductPage() && !isReviewTestPage()) || (!isReviewTestPage() && hasNoProductsNotice())) {
         stopAutoScroll('페이지 이동 또는 상품 없음');
         return;
       }
@@ -550,6 +639,12 @@
   }
   function scan() {
     if (!visible) return;
+    if (isReviewTestPage()) {
+      scanReviewable();
+      return;
+    }
+    $('viewTitle').textContent = '체험단 상품 우선순위';
+    $('leaderLabel').textContent = '현재 추천 1위';
     // 상품 점수 목록을 이전 페이지에서 가져오는 것처럼 보이지 않게 초기화.
     if (!isVineProductPage()) {
       stopAutoScroll('체험단 상품 페이지가 아님');
@@ -660,6 +755,19 @@
   }
   function exportCsv() {
     if (!ranked.length) return;
+    if (isReviewTestPage()) {
+      const quote = v => '"' + String(v == null ? '' : v).replaceAll('"', '""') + '"';
+      const lines = [['테스트순위','리뷰작성 상품명','키워드 점수','판단근거'],
+        ...ranked.map((p,i)=>[i+1,p.name,p.score,p.reasons.join(' / ')])];
+      const blob = new Blob(['\ufeff' + lines.map(row=>row.map(quote).join(',')).join('\r\n')],
+        {type:'text/csv;charset=utf-8'});
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href=url; link.download='리뷰상품_인식테스트.csv';
+      document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),1000);
+      return;
+    }
     const quote = v => '"' + String(v == null ? '' : v).replaceAll('"', '""') + '"';
     const rows = [['순위','상품명','가격(원)','재고상태','남은수량','점수','판단근거','링크'],
       ...ranked.map((p,i) => [i+1,p.name,p.price || '',stockLabel(p),p.remaining ?? '',p.score,p.reasons.join(' / '),p.url])];
@@ -691,7 +799,7 @@
   window.addEventListener('scroll', () => scheduleScan(120), { passive:true });
   window.addEventListener('load', scheduleScan, { once:true });
   try {
-    if (sessionStorage.getItem(PANEL_KEY) === 'yes' && isVineProductPage()) {
+    if (sessionStorage.getItem(PANEL_KEY) === 'yes' && (isVineProductPage() || isReviewTestPage())) {
       setVisible(true);
       setTimeout(() => { if (visible && settings.autoRefreshEnabled && !autoRunning) startAutoScroll(); }, 1400);
     }
