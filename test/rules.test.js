@@ -17,3 +17,20 @@ assert.equal(scoreProduct({name:'삼성 모니터',price:700000},{...s,maxPrice:
 assert.equal(scoreProduct({name:'삼성 모니터',price:200000},{...s,minPrice:300000}),null);
 assert.ok(scoreProduct({name:'미확인 가격 모니터',price:0},s).reasons.includes('가격 미확인'));
 console.log('모든 점수 계산 테스트 통과');
+
+const {priceContext} = require('../extension/scoring.js');
+const priceSettings = {...DEFAULT_SETTINGS, priorityKeywords:'', preferredKeywords:'', excludeKeywords:'',categoryRules:'', keywordWeight:0,categoryWeight:0,priceWeight:100,priceMode:'relative'};
+const low = [8000,9000,10000].map((price,i)=>({name:`저가 상품 ${i}`,price,availability:'available'}));
+const high = [800000,900000,1000000].map((price,i)=>({name:`고가 상품 ${i}`,price,availability:'available'}));
+const lowScore = rankProducts(low,priceSettings).map(p=>p.score);
+const highScore = rankProducts(high,priceSettings).map(p=>p.score);
+assert.deepEqual(lowScore,highScore,'회차 가격대와 무관하게 상대가격 비율은 동일하게 평가');
+assert.deepEqual(lowScore,[55.6,50,44.4]);
+assert.equal(priceContext(low,priceSettings).bandLabel,'1만원 이하 (추정)');
+assert.equal(priceContext(high,priceSettings).bandLabel,'100만원 이하 (추정)');
+assert.equal(rankProducts([...low,{name:'품절 최상급 상품',price:9999999,availability:'soldout'}],priceSettings).length,3);
+const fixed = rankProducts(low,{...priceSettings,priceMode:'target',preferredPrice:10000});
+assert.equal(fixed[0].score,100);
+assert.equal(DEFAULT_SETTINGS.autoRefreshEnabled,false);
+assert.equal(DEFAULT_SETTINGS.refreshIntervalSeconds,60);
+console.log('v0.8 상대가격/제외/새로고침 기본 설정 테스트 통과');
