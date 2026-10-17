@@ -1,1 +1,25 @@
-The requested file reference is not currently visible. Use files.search or files.list to rediscover the file, then retry with a returned ref_id or file_id.
+{
+  "manifest_version": 3,
+  "name": "체험단 상품 우선순위 도우미",
+  "version": "0.8.3",
+  "description": "쿠팡체험단·리뷰 목록 분석: 5~30초 선택형 자동 새로고침, 스크롤 끝/품절 감지 후 갱신, 가중치 추천. 자동 신청 없음.",
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://my.coupang.com/productreview/*"
+      ],
+      "js": [
+        "scoring.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}
