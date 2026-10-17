@@ -8,6 +8,9 @@
     excludeKeywords: '케이스, 필름, 리필',
     categoryRules: '노트북,컴퓨터,모니터,태블릿:100\n냉장고,세탁기,청소기,에어컨:90\n책상,의자,매트리스:70\n식품,과자,음료:20',
     priceWeight: 75,
+    priceMode: 'relative', // relative = 이번 회차 상품들의 중앙값 대비 가격
+    autoRefreshEnabled: false,
+    refreshIntervalSeconds: 60,
     keywordWeight: 65,
     categoryWeight: 60,
     preferredPrice: 300000,
@@ -33,7 +36,24 @@
     }).filter(Boolean);
   }
 
-  function scoreProduct(product, rawSettings) {
+  function priceContext(products, rawSettings) {
+    const s = { ...DEFAULT_SETTINGS, ...(rawSettings || {}) };
+    const excluded = splitKeywords(s.excludeKeywords);
+    const prices = products.filter(p => !p.unavailable && p.availability !== 'soldout' &&
+      !(p.availability === 'unknown' && s.hideUnknownStock !== false) &&
+      !excluded.some(k => normalize(p.name).includes(k)) &&
+      (Number(s.minPrice) <= 0 || +p.price >= +s.minPrice) &&
+      (Number(s.maxPrice) <= 0 || +p.price <= +s.maxPrice))
+      .map(p => Number(p.price)).filter(price => Number.isFinite(price) && price > 0).sort((a,b) => a-b);
+    const mid = Math.floor(prices.length / 2);
+    const medianPrice = prices.length ? (prices.length % 2 ? prices[mid] : (prices[mid-1] + prices[mid]) / 2) : 0;
+    const bands = [10000, 50000, 300000, 1000000];
+    const upper = bands.find(v => medianPrice <= v);
+    return { medianPrice, sampleCount: prices.length,
+      bandLabel: !medianPrice ? '분석 중' : upper ? `${(upper/10000).toLocaleString('ko-KR')}만원 이하 (추정)` : '100만원 초과 (추정)' };
+  }
+
+  function scoreProduct(product, rawSettings, context = null) {
     const s = { ...DEFAULT_SETTINGS, ...(rawSettings || {}) };
     const name = normalize(product.name);
     const price = Number.isFinite(+product.price) ? Math.max(0, +product.price) : 0;
@@ -71,10 +91,13 @@
       reasons.push('카테고리: ' + topCategory.keyword);
     }
     if (price > 0) {
-      // 가격 0/미확인에 과도한 점수를 주지 않으며 목표 가격 이상은 만점.
-      const reference = Math.max(1000, Number(s.preferredPrice) || 300000);
-      score += clamp(+s.priceWeight || 0, 0, 100) * clamp(price / reference, 0, 1);
-      if (price >= reference) reasons.push('목표 가격 이상');
+      const isRelative = s.priceMode !== 'target';
+      const median = context?.medianPrice > 0 ? context.medianPrice : price;
+      const reference = isRelative ? median : Math.max(1000, Number(s.preferredPrice) || 300000);
+      const ratio = clamp(price / reference, 0, isRelative ? 2 : 1);
+      score += clamp(+s.priceWeight || 0, 0, 100) * (isRelative ? ratio / 2 : ratio);
+      if (isRelative && context?.sampleCount >= 2) reasons.push(`이번 목록 중앙값 대비 ${(price / median).toFixed(2)}배`);
+      else if (!isRelative && price >= reference) reasons.push('목표 가격 이상');
     } else {
       reasons.push('가격 미확인');
     }
@@ -82,10 +105,11 @@
   }
 
   function rankProducts(products, settings) {
-    return products.map(p => scoreProduct(p, settings)).filter(Boolean)
+    const context = priceContext(products, settings);
+    return products.map(p => scoreProduct(p, settings, context)).filter(Boolean)
       .sort((a, b) => b.score - a.score || (b.price || 0) - (a.price || 0) || a.name.localeCompare(b.name, 'ko'));
   }
-  const api = { DEFAULT_SETTINGS, splitKeywords, parseCategories, scoreProduct, rankProducts };
+  const api = { DEFAULT_SETTINGS, splitKeywords, parseCategories, scoreProduct, rankProducts, priceContext };
   root.VineScoring = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
