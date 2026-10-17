@@ -11,7 +11,7 @@
   const MIN_REFRESH_SEC = 5;
   const LOCATION_REFRESH_PAUSE_MS = 30_000;
   const DISPLAY_RANK_LIMIT = 10;
-  const rankTier = rank => rank <= 3 ? 'red' : rank <= 5 ? 'orange' : 'blue';
+  const rankTier = rank => rank <= 3 ? 'red' : rank <= 5 ? 'yellow' : 'blue';
   const REFRESH_SECONDS = [5, 10, 15, 20, 30];
   const LAST_REFRESH_KEY = 'vineHelperLastReloadV083';
   const MAX_WAIT_FOR_NEW_ITEMS = 4; // 지연 로딩 목록이 나타날 기회 보장
@@ -68,7 +68,7 @@
   highlightCss.textContent = `
     .${CARD_CLASS} { position:relative!important; outline:2px solid #1761c2!important; outline-offset:-2px!important; }
     .${CARD_CLASS}[data-vine-helper-tier="red"] { outline:3px solid #c62828!important; }
-    .${CARD_CLASS}[data-vine-helper-tier="orange"] { outline:3px solid #c2640c!important; }
+    .${CARD_CLASS}[data-vine-helper-tier="yellow"] { outline:3px solid #d9ac05!important; }
     .${CARD_CLASS}[data-vine-helper-tier="blue"] { outline:2px solid #1761c2!important; }
     .${MARKER_CLASS} { position:absolute!important;right:5px!important;top:5px!important;
       display:block!important;width:max-content!important;max-width:90%!important;
@@ -77,9 +77,8 @@
       padding:5px 8px!important;border-radius:7px!important;box-shadow:0 2px 8px #0003!important;
       pointer-events:none!important;white-space:normal!important;text-align:left!important; }
     .${CARD_CLASS}[data-vine-helper-tier="red"] > .${MARKER_CLASS} { background:#c62828!important; }
-    .${CARD_CLASS}[data-vine-helper-tier="orange"] > .${MARKER_CLASS} { background:#c2640c!important; }
+    .${CARD_CLASS}[data-vine-helper-tier="yellow"] > .${MARKER_CLASS} { background:#ffd83d!important;color:#302600!important; }
     .${CARD_CLASS}[data-vine-helper-tier="blue"] > .${MARKER_CLASS} { background:#1761c2!important; }
-    .${CARD_CLASS}[data-vine-helper-top="true"] > .${MARKER_CLASS} { background:#9c5a00!important; }
   `;
   (document.head || document.documentElement).appendChild(highlightCss);
   const host = document.createElement('div');
@@ -91,9 +90,10 @@
   .launcher,.panel{pointer-events:auto;font-family:'Malgun Gothic',Arial,sans-serif;color:#172237;font-size:13px}
   button,input,textarea{font-family:inherit} button{cursor:pointer}
   .launcher{float:right;border:0;border-radius:40px;padding:12px 17px;background:#1450a8;color:white;font-weight:700;box-shadow:0 4px 18px #0003}
-  .panel{width:min(470px,calc(100vw - 24px));max-height:min(82vh,740px);display:flex;flex-direction:column;background:#fff;border:1px solid #d8e1ee;box-shadow:0 8px 35px #14243b44;border-radius:14px;overflow:hidden}
+  .panel{width:min(470px,calc(100vw - 24px));height:min(82vh,740px);max-height:min(82vh,740px);display:flex;flex-direction:column;background:#fff;border:1px solid #d8e1ee;box-shadow:0 8px 35px #14243b44;border-radius:14px;overflow:hidden}
   .top{display:flex;gap:8px;align-items:center;justify-content:space-between;padding:14px 15px;border-bottom:1px solid #e8edf3}
   h2{margin:0;font-size:15px;line-height:1.5} .small{font-size:11px;color:#66758a}
+  .mainView{display:flex;flex:1;min-height:0;flex-direction:column}
   .toolbar{padding:11px 13px;display:flex;flex-wrap:wrap;align-items:center;gap:7px}
   .btn{padding:7px 10px;background:#f2f5fa;border:1px solid #dce3ec;color:#223247;border-radius:7px;font-size:12px}
   .btn.primary{background:#1761c2;border-color:#1761c2;color:white;font-weight:700}
@@ -101,7 +101,7 @@
   .product{border-bottom:1px solid #eff1f5;padding:9px 0;display:flex;gap:10px;align-items:start}
   .rank{flex:0 0 33px;text-align:center;font-weight:800;color:#fff;font-size:14px;border-radius:7px;padding:5px 2px;background:#1761c2}
   .product.tier-red .rank{background:#c62828}
-  .product.tier-orange .rank{background:#c2640c}
+  .product.tier-yellow .rank{background:#ffd83d;color:#302600}
   .product.tier-blue .rank{background:#1761c2}
   .info{flex:1;min-width:0}.name{font-weight:700;word-break:break-all;line-height:1.5}
   .meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:5px;font-size:12px}.price{color:#d14b20;font-weight:700}
@@ -115,14 +115,32 @@
 
   .speed{border:1px solid #dce3ec;color:#223247;border-radius:7px;padding:6px;font-size:12px;background:white;cursor:pointer}
   .copy{font-size:11px;align-self:center;padding:5px 7px;border:1px solid #d6deea;background:white;border-radius:6px}
-  .settings{padding:10px 13px;border-top:1px solid #e8edf3;overflow:auto;max-height:360px;background:#f8fafc}
-  .field{margin:0 0 10px}.field label{display:block;font-weight:700;font-size:12px;margin-bottom:4px}
-  .field textarea,.field input[type=number]{width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:6px 8px;font-size:12px;background:white;color:#182436}
-  .field textarea{resize:vertical;min-height:44px;line-height:1.5}
+  .settings{flex:1;min-height:0;overflow:hidden;background:#f8fafc;display:flex;flex-direction:column}
+  .settingsIntro{padding:12px 16px;background:#fff;border-bottom:1px solid #e1e9f3}
+  .settingsIntro strong{display:block;font-size:14px;margin-bottom:3px}
+  .settingsScroll{overflow-y:auto;min-height:0;flex:1;padding:12px 14px 18px}
+  .settingGroup{background:white;border:1px solid #e0e7f0;border-radius:11px;margin-bottom:12px;padding:14px}
+  .settingGroup h3{margin:0 0 4px;font-size:13px;color:#152844}
+  .hint{font-size:11px;color:#62738b;line-height:1.55;margin:0 0 10px}
+  .field{margin:12px 0 0}.field label{display:block;font-weight:700;font-size:12px;margin-bottom:5px}
+  .field textarea,.field input[type=number],.field input[type=text],.field select{width:100%;border:1px solid #bfcddd;border-radius:8px;padding:9px 10px;font-size:12px;background:white;color:#182436}
+  .field textarea{resize:vertical;min-height:52px;line-height:1.5}
+  .field:focus-within label{color:#145bb2}
   .double{display:flex;gap:8px}.double .field{flex:1;min-width:0}
-  .range{display:flex;align-items:center;gap:8px}.range input{flex:1}.range span{width:25px;text-align:right}
+  .range{display:flex;align-items:center;gap:9px}.range input{flex:1;min-width:0;accent-color:#1761c2}.range span{min-width:34px;text-align:right;color:#1459a8;font-weight:700}
+  .quickActions{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+  .quickChip{background:#eef5ff;border:1px solid #cbdef7;border-radius:999px;color:#23558d;font-size:11px;padding:5px 9px}
+  .quickChip:hover{background:#ddeaff}
+  .categoryRow{margin:10px 0;border:1px solid #e1e8f1;border-radius:8px;padding:10px;background:#fafcff}
+  .categoryRowHead{display:flex;gap:6px;align-items:center}
+  .categoryRowHead input{flex:1;min-width:0;border:1px solid #cbd5e1;border-radius:6px;padding:8px;font-size:12px}
+  .categoryRow .range{margin-top:8px}
+  .removeCategory{flex:0 0 auto;padding:6px 9px;border:1px solid #ecd4d4;border-radius:6px;background:#fff6f6;color:#9a3333}
+  .settingsActions{display:flex;gap:8px;align-items:center;padding:12px 14px;background:#fff;border-top:1px solid #e1e8f0}
+  .settingsActions .saveBtn{flex:1;padding:10px 12px}
+  .error{color:#c62828;font-size:11px;padding-top:8px}
   .leader{display:flex;align-items:flex-start;gap:6px;border-top:1px solid #ecf1f7;background:#f0f6ff;padding:8px 13px;font-size:12px;line-height:1.5}
-  .leader b{color:#1559a8;flex-shrink:0}.leader span{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .leader b{color:#c62828;flex-shrink:0}.leader span{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .leader.changed{background:#fff0d6;transition:background 0.5s ease}
   .refreshBar{padding:8px 13px;display:flex;align-items:center;gap:8px;background:#f7f9fd;border-top:1px solid #e6ecf5;flex-wrap:wrap}
   .refreshBar label{display:flex;align-items:center;gap:5px;font-size:12px;font-weight:700}
@@ -133,25 +151,40 @@
   </style>
   <button id="launch" class="launcher">🔎 상품 분석</button>
   <div id="panel" class="panel" hidden>
-    <div class="top"><div><h2 id="viewTitle">체험단 상품 우선순위</h2><div class="small" id="summary">화면에 표시된 상품만 분석</div></div><button class="btn" id="close">닫기 ×</button></div>
+    <div class="top"><div><div id="mainHeader"><h2 id="viewTitle">체험단 상품 우선순위</h2><div class="small" id="summary">화면에 표시된 상품만 분석</div></div><div id="settingsHeaderTitle" hidden><h2>가중치 설정</h2><div class="small">추천 목록과 분리된 설정 화면</div></div></div><button class="btn" id="close">닫기 ×</button></div>
+    <div id="mainView" class="mainView">
     <div class="toolbar"><button class="btn primary" id="scan">화면 다시 분석</button><button class="btn" id="options">⚙ 가중치 설정</button><button class="btn" id="clear">누적 초기화</button></div>
     <div class="toolbar" style="padding-top:0"><button class="btn primary" id="auto">↡ 자동 스크롤 시작</button><button class="btn" id="stop" hidden>■ 스크롤 중지</button><label for="speed" class="small">속도</label><select id="speed" class="speed"><option value="850">안정</option><option value="350">빠름</option><option value="180" selected>고속</option></select><span id="scrollStatus" class="small">수동 시작</span></div>
     <div class="refreshBar"><label><input id="refreshEnabled" type="checkbox"> 자동 새로고침</label><select id="refreshInterval"><option value="5">5초</option><option value="10">10초</option><option value="15" selected>15초</option><option value="20">20초</option><option value="30">30초</option></select><span class="small" id="refreshStatus">기본 OFF</span></div>
     <div id="leader" class="leader"><b id="leaderLabel">현재 추천 1위</b><span id="leaderName">분석 대기 중</span></div>
     <div id="changes" class="changes" hidden></div>
     <div id="results" class="results"><div class="empty">상품을 분석하려면 '다시 스캔'을 누르세요.</div></div>
+    </div><!-- /mainView -->
     <div id="settings" class="settings" hidden>
-      <div class="field"><label>최우선 키워드 (포함 시 일반 상품보다 우선)</label><textarea id="priorityKeywords" rows="2"></textarea></div>
-      <div class="field"><label>선호 키워드 (추가 점수)</label><textarea id="preferredKeywords" rows="2"></textarea></div>
-      <div class="field"><label>제외 키워드 (결과에서 완전히 숨김)</label><textarea id="excludeKeywords" rows="2"></textarea></div>
-      <div class="field"><label>카테고리별 선호도 (키워드,키워드:0~100)</label><textarea id="categoryRules" rows="4"></textarea></div>
-      <div class="field"><label>가격 평가 방식</label><select id="priceMode" style="width:100%;padding:7px;background:white;border:1px solid #cbd5e1;border-radius:6px"><option value="relative">이번 목록 가격 중앙값 기준 (추천)</option><option value="target">고정 목표 가격 기준</option></select></div>
-      <div class="field"><label>가격 가중치</label><div class="range"><input id="priceWeight" type="range" min="0" max="100"><span id="priceWeightView"></span></div></div>
-      <div class="field"><label>선호 키워드 가중치</label><div class="range"><input id="keywordWeight" type="range" min="0" max="100"><span id="keywordWeightView"></span></div></div>
-      <div class="field"><label>카테고리 가중치</label><div class="range"><input id="categoryWeight" type="range" min="0" max="100"><span id="categoryWeightView"></span></div></div>
-      <div class="double"><div class="field"><label>고정 모드 목표가격(원)</label><input id="preferredPrice" type="number" min="1000" step="10000"></div><div class="field"><label>최저 가격 필터(원)</label><input id="minPrice" type="number" min="0" step="10000"></div></div>
-      <div class="double"><div class="field"><label>최고 가격 필터(원, 0=제한 없음)</label><input id="maxPrice" type="number" min="0" step="10000"></div><div class="field"><label style="margin-top:21px"><input id="hideUnavailable" type="checkbox" checked disabled> 모두 소진은 항상 제외</label></div></div>
-      <button id="save" class="btn primary">설정 저장하고 다시 계산</button> <button id="reset" class="btn">기본값으로 초기화</button>
+      <div class="settingsIntro"><strong>내 취향에 맞게 추천 순위를 정해보세요</strong><div class="small">설정을 편집하는 동안 스크롤과 자동 새로고침이 잠시 멈춥니다. 저장하면 바로 순위에 적용돼요.</div></div>
+      <div class="settingsScroll">
+        <section class="settingGroup"><h3>① 키워드 기준</h3><p class="hint">쉼표(,) 또는 줄바꿈으로 구분해요. 단어가 상품명에 포함되면 적용됩니다.</p>
+          <div class="field"><label for="priorityKeywords">최우선 키워드</label><textarea id="priorityKeywords" rows="2" placeholder="예: 노트북, 모니터"></textarea><p class="hint">포함된 상품은 일반 상품보다 먼저 추천해요.</p><div class="quickActions" id="priorityQuick"><button type="button" class="quickChip" data-word="노트북">+ 노트북</button><button type="button" class="quickChip" data-word="모니터">+ 모니터</button><button type="button" class="quickChip" data-word="태블릿">+ 태블릿</button><button type="button" class="quickChip" data-word="스마트폰">+ 스마트폰</button></div></div>
+          <div class="field"><label for="preferredKeywords">선호 키워드</label><textarea id="preferredKeywords" rows="2" placeholder="예: 삼성, LG, 애플"></textarea><p class="hint">있으면 가산점을 주되 최우선 키워드보다는 약해요.</p></div>
+          <div class="field"><label for="excludeKeywords">제외 키워드</label><textarea id="excludeKeywords" rows="2" placeholder="예: 케이스, 필름, 리필"></textarea><p class="hint">포함된 상품은 추천 결과에서 완전히 제외해요.</p><div class="quickActions" id="excludeQuick"><button type="button" class="quickChip" data-word="케이스">+ 케이스</button><button type="button" class="quickChip" data-word="필름">+ 필름</button><button type="button" class="quickChip" data-word="리필">+ 리필</button><button type="button" class="quickChip" data-word="소모품">+ 소모품</button></div></div>
+        </section>
+        <section class="settingGroup"><h3>② 무엇을 더 중요하게 볼까?</h3><p class="hint">각 기준에 부여할 점수를 정해요. 높을수록 순위에 더 큰 영향을 줍니다.</p>
+          <div class="field"><label for="priceWeight">가격 중요도</label><div class="range"><input id="priceWeight" type="range" min="0" max="100" step="5"><span id="priceWeightView"></span></div></div>
+          <div class="field"><label for="keywordWeight">선호 키워드 중요도</label><div class="range"><input id="keywordWeight" type="range" min="0" max="100" step="5"><span id="keywordWeightView"></span></div></div>
+          <div class="field"><label for="categoryWeight">카테고리 중요도</label><div class="range"><input id="categoryWeight" type="range" min="0" max="100" step="5"><span id="categoryWeightView"></span></div></div>
+        </section>
+        <section class="settingGroup"><h3>③ 카테고리별 선호도</h3><p class="hint">카테고리에 해당하는 단어와 선호도(0~100)를 각각 설정하세요. 복잡한 입력 문법을 몰라도 돼요.</p>
+          <textarea id="categoryRules" hidden></textarea><div id="categoryEditor"></div><button type="button" id="addCategory" class="btn">+ 카테고리 추가</button>
+        </section>
+        <section class="settingGroup"><h3>④ 가격 설정</h3><p class="hint">체험단 회차마다 비슷한 가격대가 나온다는 점을 고려해 이번 목록 기준을 추천해요.</p>
+          <div class="field"><label for="priceMode">가격 점수 계산법</label><select id="priceMode"><option value="relative">이번 목록 중앙값 대비 가격 (추천)</option><option value="target">직접 지정한 목표 가격</option></select></div>
+          <div class="field" id="preferredPriceField"><label for="preferredPrice">목표 가격 (원)</label><input id="preferredPrice" type="number" min="1000" step="1000"><p class="hint">직접 목표 가격을 설정하는 방식에서만 사용해요.</p></div>
+          <div class="double"><div class="field"><label for="minPrice">최저 가격 제한 (원)</label><input id="minPrice" type="number" min="0" step="1000" placeholder="0 = 제한 없음"></div><div class="field"><label for="maxPrice">최고 가격 제한 (원)</label><input id="maxPrice" type="number" min="0" step="1000" placeholder="0 = 제한 없음"></div></div>
+          <p class="hint" style="margin-top:9px">0은 제한하지 않는다는 뜻이에요. 품절 상품은 항상 제외됩니다.</p><input type="checkbox" id="hideUnavailable" checked hidden>
+        </section>
+        <div class="error" id="settingsError" role="alert" hidden></div>
+      </div>
+      <div class="settingsActions"><button type="button" id="back" class="btn">← 추천 목록</button><button type="button" id="reset" class="btn">기본값</button><button type="button" id="save" class="btn primary saveBtn">설정 저장 · 순위 갱신</button></div>
     </div>
     <div class="foot" id="foot">재고는 마지막 새로고침 기준 · 자동 새로고침 기본 OFF · 신청은 휴대폰에서 직접</div>
   </div>`;
@@ -169,13 +202,45 @@
   $('launch').addEventListener('click', () => setVisible(true));
   $('close').addEventListener('click', () => setVisible(false));
   $('scan').addEventListener('click', scan);
-  $('options').addEventListener('click', () => {
-    settingsOpen = !settingsOpen;
+  function showSettings(open) {
+    settingsOpen = Boolean(open);
+    $('mainView').hidden = settingsOpen;
     $('settings').hidden = !settingsOpen;
-    if (settingsOpen) fillSettings();
-  });
+    $('mainHeader').hidden = settingsOpen;
+    $('settingsHeaderTitle').hidden = !settingsOpen;
+    $('foot').hidden = settingsOpen;
+    if (settingsOpen) {
+      stopAutoScroll('설정 편집 중');
+      clearPendingRefresh();
+      fillSettings();
+      $('settingsError').hidden = true;
+    } else {
+      armRefresh();
+      previousRanking = '';
+      scan();
+    }
+    updateRefreshStatus();
+  }
+  $('options').addEventListener('click', () => showSettings(true));
+  $('back').addEventListener('click', () => showSettings(false));
   $('save').addEventListener('click', saveSettings);
-  $('reset').addEventListener('click', () => { settings = { ...scoring.DEFAULT_SETTINGS }; fillSettings(); saveSettings(); });
+  $('reset').addEventListener('click', () => { fillSettings(scoring.DEFAULT_SETTINGS); $('settingsError').hidden = true; });
+  $('priceMode').addEventListener('change', updatePriceModeField);
+  function bindQuickButtons(groupId, fieldId) {
+    $(groupId).addEventListener('click', e => {
+      const chip = e.target.closest('button[data-word]');
+      if (!chip) return;
+      const input = $(fieldId), words = scoring.splitKeywords(input.value);
+      const newWord = chip.dataset.word;
+      if (!words.some(w => w === newWord.toLocaleLowerCase('ko-KR'))) {
+        input.value = input.value.trim() ? input.value.trim() + ', ' + newWord : newWord;
+      }
+      input.focus();
+    });
+  }
+  bindQuickButtons('priorityQuick','priorityKeywords');
+  bindQuickButtons('excludeQuick','excludeKeywords');
+  $('addCategory').addEventListener('click', () => addCategoryRow('', 50));
   $('auto').addEventListener('click', startAutoScroll);
   $('stop').addEventListener('click', () => stopAutoScroll('사용자 중지'));
   $('refreshEnabled').addEventListener('change', () => {
@@ -277,6 +342,7 @@
     else if (!currentRefreshEnabled()) $('refreshStatus').textContent = '꺼짐';
     else if (!visible) $('refreshStatus').textContent = '창을 열면 시작';
     else if (document.hidden) $('refreshStatus').textContent = '탭 비활성 · 일시중지';
+    else if (settingsOpen) $('refreshStatus').textContent = '가중치 설정 중 · 일시중지';
     else if (reviewEditorOpen()) $('refreshStatus').textContent = '리뷰 편집 감지 · 일시중지';
     else if (Date.now() < locationRefreshPauseUntil)
       $('refreshStatus').textContent = `위치 확인 중 · ${Math.ceil((locationRefreshPauseUntil-Date.now())/1000)}초 후 재개`;
@@ -291,7 +357,7 @@
     else $('refreshStatus').textContent = `다음 확인 ${Math.max(0,Math.ceil((nextRefreshAt-Date.now())/1000))}초 후`;
   }
   function persistAndReload() {
-    if (refreshInProgress || !currentRefreshEnabled() || !visible || document.hidden || reviewEditorOpen()) return;
+    if (refreshInProgress || settingsOpen || !currentRefreshEnabled() || !visible || document.hidden || reviewEditorOpen()) return;
     const wait = reloadCooldownMs();
     if (wait > 0) {
       nextRefreshAt = Date.now() + wait;
@@ -330,7 +396,7 @@
     if (!currentRefreshEnabled() || !visible || !canRefreshHere()) {
       clearPendingRefresh(); return;
     }
-    if (document.hidden || reviewEditorOpen()) { updateRefreshStatus(); return; }
+    if (document.hidden || settingsOpen || reviewEditorOpen()) { updateRefreshStatus(); return; }
     const cooldown = reloadCooldownMs();
     if (cooldown) {
       if (immediateRefreshTimer == null) immediateRefreshTimer = setTimeout(() => {
@@ -345,7 +411,7 @@
   }
   function requestImmediateRefresh(reason) {
     // 자동 새로고침 OFF이거나 리뷰를 편집하고 있으면 스크롤을 중단하지 않는다.
-    if (!currentRefreshEnabled() || !visible || document.hidden || reviewEditorOpen() ||
+    if (!currentRefreshEnabled() || !visible || document.hidden || settingsOpen || reviewEditorOpen() ||
         Date.now() < locationRefreshPauseUntil) return false;
     pendingImmediateRefresh = reason;
     stopAutoScroll(`${reason} · 새로고침`);
@@ -353,7 +419,7 @@
     return true;
   }
   refreshCheckTimer = setInterval(() => {
-    if (!currentRefreshEnabled() || !visible || !canRefreshHere() || document.hidden) {
+    if (!currentRefreshEnabled() || !visible || !canRefreshHere() || document.hidden || settingsOpen) {
       updateRefreshStatus(); return;
     }
     if (pendingImmediateRefresh) { flushImmediateRefresh(); return; }
@@ -433,27 +499,68 @@
       storageSave(STOCK_KEY,{seenAt:Date.now(),items});
     },600);
   }
-  function fillSettings() {
-    $('priceMode').value = settings.priceMode === 'target' ? 'target' : 'relative';
-    for (const id of ['priorityKeywords','preferredKeywords','excludeKeywords','categoryRules',
+  function updatePriceModeField() {
+    $('preferredPriceField').hidden = $('priceMode').value !== 'target';
+  }
+  function addCategoryRow(names, strength) {
+    const row = mk('div', {class:'categoryRow'});
+    const head = mk('div',{class:'categoryRowHead'});
+    const keywords = mk('input',{type:'text',placeholder:'해당 단어: 예) 노트북, 모니터', 'aria-label':'카테고리 키워드'});
+    keywords.value = names;
+    const remove = mk('button',{type:'button',class:'removeCategory','aria-label':'이 카테고리 삭제'},'삭제');
+    remove.addEventListener('click',()=>row.remove());
+    const slider = mk('input',{type:'range',min:'0',max:'100',step:'5','aria-label':'카테고리 선호 점수'});
+    slider.value = String(strength);
+    const number = mk('span',null,String(strength));
+    slider.addEventListener('input',()=>number.textContent=slider.value);
+    const range = mk('div',{class:'range'});
+    range.append(slider,number);
+    head.append(keywords,remove);
+    row.append(head,range);
+    $('categoryEditor').appendChild(row);
+  }
+  function fillSettings(values = settings) {
+    $('priceMode').value = values.priceMode === 'target' ? 'target' : 'relative';
+    for (const id of ['priorityKeywords','preferredKeywords','excludeKeywords',
                       'priceWeight','keywordWeight','categoryWeight','preferredPrice','minPrice','maxPrice']) {
-      $(id).value = settings[id];
+      $(id).value = values[id] ?? '';
     }
-    $('hideUnavailable').checked = Boolean(settings.hideUnavailable);
-    for (const id of ['priceWeight','keywordWeight','categoryWeight']) $(id + 'View').textContent = settings[id];
+    $('categoryRules').value = values.categoryRules || '';
+    $('categoryEditor').replaceChildren();
+    const rules = String(values.categoryRules || '').split('\n').filter(Boolean);
+    for (const text of rules) {
+      const colon = text.lastIndexOf(':');
+      if (colon < 0) continue;
+      const number = Number(text.slice(colon+1).trim());
+      addCategoryRow(text.slice(0,colon).trim(),Number.isFinite(number)?Math.max(0,Math.min(100,number)):50);
+    }
+    if (!rules.length) addCategoryRow('',50);
+    $('hideUnavailable').checked = true;
+    for (const id of ['priceWeight','keywordWeight','categoryWeight']) $(id+'View').textContent=$(id).value;
+    updatePriceModeField();
   }
   function saveSettings() {
-    const fields = ['priorityKeywords','preferredKeywords','excludeKeywords','categoryRules'];
-    const numbers = ['priceWeight','keywordWeight','categoryWeight','preferredPrice','minPrice','maxPrice'];
-    for (const id of fields) settings[id] = $(id).value;
-    settings.priceMode = $('priceMode').value;
-    for (const id of numbers) settings[id] = Math.max(0, Number($(id).value) || 0);
-    settings.hideUnavailable = true;
-    try { if (typeof chrome !== 'undefined' && chrome.storage?.local) chrome.storage.local.set({ [STORAGE_KEY]: settings }); } catch (_) { }
-    settingsOpen = false;
-    $('settings').hidden = true;
-    previousRanking = '';
-    scan();
+    const error = text => { $('settingsError').textContent=text; $('settingsError').hidden=false; return false; };
+    const minPrice = Math.max(0, Number($('minPrice').value) || 0);
+    const maxPrice = Math.max(0, Number($('maxPrice').value) || 0);
+    if (maxPrice > 0 && minPrice > maxPrice) return error('최저 가격은 최고 가격보다 클 수 없어요.');
+    const lines=[];
+    for (const row of $('categoryEditor').querySelectorAll('.categoryRow')) {
+      const names = row.querySelector('input[type=text]').value.trim();
+      const strength = row.querySelector('input[type=range]').value;
+      if (!names) continue;
+      if (!scoring.splitKeywords(names).length) continue;
+      lines.push(`${names}:${strength}`);
+    }
+    $('categoryRules').value=lines.join('\n');
+    for (const id of ['priorityKeywords','preferredKeywords','excludeKeywords','categoryRules']) settings[id]=$(id).value;
+    settings.priceMode=$('priceMode').value;
+    for (const id of ['priceWeight','keywordWeight','categoryWeight','preferredPrice','minPrice','maxPrice']) settings[id]=Math.max(0,Number($(id).value)||0);
+    settings.hideUnavailable=true;
+    try { if (typeof chrome !== 'undefined' && chrome.storage?.local) chrome.storage.local.set({[STORAGE_KEY]:settings});
+      else if (isDemoPage()) localStorage.setItem(STORAGE_KEY,JSON.stringify(settings)); } catch (_) { }
+    showSettings(false);
+    return true;
   }
 
   const priceWithWon = /(\d{1,3}(?:,\d{3})+|\d{4,9})\s*원/g;
@@ -627,6 +734,7 @@
     for (const card of decoratedCards) {
       if (card.isConnected) {
         card.classList.remove(CARD_CLASS);
+        delete card.dataset.vineHelperTop;
         delete card.dataset.vineHelperTier;
         for (const badge of card.querySelectorAll('.' + MARKER_CLASS)) badge.remove();
       }
@@ -645,7 +753,8 @@
       if (!card.isConnected || !wanted.has(card)) {
         if (card.isConnected) {
           card.classList.remove(CARD_CLASS);
-          delete card.dataset.vineHelperTier;
+          delete card.dataset.vineHelperTop;
+        delete card.dataset.vineHelperTier;
           card.querySelectorAll('.' + MARKER_CLASS).forEach(x => x.remove());
         }
         decoratedCards.delete(card);
@@ -654,6 +763,7 @@
     for (const [card, {rank,product}] of wanted) {
       card.classList.add(CARD_CLASS);
       card.dataset.vineHelperTier = rankTier(rank);
+      delete card.dataset.vineHelperTop;
       let badge = [...card.children].find(el => el.classList?.contains(MARKER_CLASS));
       if (!badge) {
         badge = mk('div',{class:MARKER_CLASS});
@@ -887,10 +997,9 @@
         postponeRefreshForLocation();
         product.card.scrollIntoView({behavior:'smooth',block:'center'});
       });
-      item.append(rankEl, info, jump, copy);
-      resultArea.appendChild(item);
+      item.append(rankEl, info, jump, copy);      resultArea.appendChild(item);
     }
-    // 전체 목록은 분석하되 화면에는 TOP 10만 표시.
+    // 분석은 전체 상품을 대상으로 유지하되 화면에는 추천 상위 10개만 표시한다.
     resultArea.scrollTop = prevListScroll;
   }
   function fallbackCopy(text) {
