@@ -131,6 +131,16 @@
   .quickActions{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
   .quickChip{background:#eef5ff;border:1px solid #cbdef7;border-radius:999px;color:#23558d;font-size:11px;padding:5px 9px}
   .quickChip:hover{background:#ddeaff}
+  .presetGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;margin:9px 0 6px}
+  .presetOption{display:flex;align-items:center;gap:6px;justify-content:flex-start;min-width:0;text-align:left;
+    background:white;border:1px solid #d0dbe9;border-radius:9px;padding:9px;font-size:12px;color:#263950;
+    font-weight:600;transition:background .1s,border-color .1s}
+  .presetOption:hover{background:#eef5ff;border-color:#8bb7ed}
+  .presetOption[aria-pressed="true"]{background:#e6f2ff;border:2px solid #1761c2;color:#114a92;padding:8px}
+  .presetCheck{margin-left:auto;color:#1761c2;font-weight:800}
+  .presetSelection{font-size:11px;color:#52677f;margin:6px 0 12px;min-height:16px}
+  .categorySubTitle{font-size:12px;font-weight:750;margin:14px 0 5px;color:#213753}
+  .categoryLabel{font-size:11px;color:#1761c2;font-weight:750;margin-bottom:6px}
   .categoryRow{margin:10px 0;border:1px solid #e1e8f1;border-radius:8px;padding:10px;background:#fafcff}
   .categoryRowHead{display:flex;gap:6px;align-items:center}
   .categoryRowHead input{flex:1;min-width:0;border:1px solid #cbd5e1;border-radius:6px;padding:8px;font-size:12px}
@@ -173,8 +183,13 @@
           <div class="field"><label for="keywordWeight">선호 키워드 중요도</label><div class="range"><input id="keywordWeight" type="range" min="0" max="100" step="5"><span id="keywordWeightView"></span></div></div>
           <div class="field"><label for="categoryWeight">카테고리 중요도</label><div class="range"><input id="categoryWeight" type="range" min="0" max="100" step="5"><span id="categoryWeightView"></span></div></div>
         </section>
-        <section class="settingGroup"><h3>③ 카테고리별 선호도</h3><p class="hint">카테고리에 해당하는 단어와 선호도(0~100)를 각각 설정하세요. 복잡한 입력 문법을 몰라도 돼요.</p>
-          <textarea id="categoryRules" hidden></textarea><div id="categoryEditor"></div><button type="button" id="addCategory" class="btn">+ 카테고리 추가</button>
+        <section class="settingGroup"><h3>③ 카테고리별 선호도</h3>
+          <p class="hint">마음에 드는 카테고리를 클릭하면 아래에 자동 추가됩니다. 한 번 더 누르면 해제할 수 있어요.</p>
+          <div id="categoryPresets" class="presetGrid" role="group" aria-label="빠른 카테고리 선택"></div>
+          <div id="presetCount" class="presetSelection" aria-live="polite"></div>
+          <div class="categorySubTitle">선택한 카테고리 · 직접 편집</div>
+          <p class="hint">추천 점수(0~100)를 바꾸거나 인식할 단어를 직접 수정할 수 있어요. 실제 쿠팡 분류가 아닌 상품명 키워드 기준입니다.</p>
+          <textarea id="categoryRules" hidden></textarea><div id="categoryEditor"></div><button type="button" id="addCategory" class="btn">+ 직접 카테고리 추가</button>
         </section>
         <section class="settingGroup"><h3>④ 가격 설정</h3><p class="hint">체험단 회차마다 비슷한 가격대가 나온다는 점을 고려해 이번 목록 기준을 추천해요.</p>
           <div class="field"><label for="priceMode">가격 점수 계산법</label><select id="priceMode"><option value="relative">이번 목록 중앙값 대비 가격 (추천)</option><option value="target">직접 지정한 목표 가격</option></select></div>
@@ -240,6 +255,17 @@
   }
   bindQuickButtons('priorityQuick','priorityKeywords');
   bindQuickButtons('excludeQuick','excludeKeywords');
+  $('categoryPresets').addEventListener('click', e => {
+    const chip = e.target.closest('button[data-preset]');
+    if (!chip) return;
+    const preset = CATEGORY_PRESETS.find(p => p.id === chip.dataset.preset);
+    if (!preset) return;
+    const current = [...$('categoryEditor').querySelectorAll('.categoryRow')]
+      .find(row => categoryKey(row.querySelector('input[type=text]').value) === categoryKey(preset.keywords));
+    if (current) current.remove();
+    else addCategoryRow(preset.keywords, preset.score);
+    updatePresetSelection();
+  });
   $('addCategory').addEventListener('click', () => addCategoryRow('', 50));
   $('auto').addEventListener('click', startAutoScroll);
   $('stop').addEventListener('click', () => stopAutoScroll('사용자 중지'));
@@ -502,13 +528,59 @@
   function updatePriceModeField() {
     $('preferredPriceField').hidden = $('priceMode').value !== 'target';
   }
+  const CATEGORY_PRESETS = Object.freeze([
+    {id:"digital",icon:"💻",label:"디지털·PC",keywords:"노트북,컴퓨터,모니터,태블릿,스마트폰,키보드,마우스",score:90},
+    {id:"appliance",icon:"🔌",label:"생활가전",keywords:"청소기,공기청정기,제습기,가습기,선풍기,히터",score:85},
+    {id:"kitchen-appliance",icon:"🍳",label:"주방가전",keywords:"에어프라이어,전자레인지,믹서기,전기포트,커피머신",score:80},
+    {id:"home",icon:"🛋️",label:"가구·인테리어",keywords:"책상,의자,선반,수납장,침대,매트리스,조명",score:75},
+    {id:"kitchen",icon:"🥣",label:"주방·생활",keywords:"프라이팬,냄비,도마,식기,수저,밀폐용기,세제",score:65},
+    {id:"food",icon:"🍪",label:"식품·음료",keywords:"과자,라면,음료,커피,초콜릿,간편식,식품",score:35},
+    {id:"beauty",icon:"🧴",label:"뷰티·스킨케어",keywords:"로션,크림,세럼,앰플,클렌징,마스크팩,선크림",score:60},
+    {id:"fashion",icon:"👕",label:"패션·잡화",keywords:"티셔츠,바지,셔츠,운동화,지갑,가방,벨트",score:55},
+    {id:"health",icon:"💊",label:"건강·영양",keywords:"영양제,비타민,유산균,단백질,홍삼,건강기능식품",score:60},
+    {id:"pet",icon:"🐾",label:"반려동물",keywords:"강아지,고양이,반려견,반려묘,사료,배변패드,펫",score:50},
+    {id:"office",icon:"✏️",label:"문구·사무",keywords:"볼펜,공책,다이어리,포스트잇,사무용,파일철",score:45},
+    {id:"car",icon:"🚗",label:"자동차용품",keywords:"차량용,자동차,와이퍼,세차,차량거치대,카매트",score:55},
+    {id:"sports",icon:"🏋️",label:"스포츠·운동",keywords:"덤벨,요가매트,헬스,운동기구,필라테스,스포츠",score:55},
+    {id:"kids",icon:"🧸",label:"완구·유아",keywords:"장난감,블록,인형,유아용,기저귀,젖병",score:45}
+  ]);
+  function categoryKey(value) {
+    return [...new Set(scoring.splitKeywords(value))].sort().join('|');
+  }
+  function renderCategoryPresets() {
+    const area = $('categoryPresets');
+    area.replaceChildren();
+    for (const preset of CATEGORY_PRESETS) {
+      const chip = mk('button',{type:'button',class:'presetOption','data-preset':preset.id,'aria-pressed':'false'});
+      chip.append(mk('span',null,preset.icon),mk('span',null,preset.label),mk('span',{class:'presetCheck','aria-hidden':'true'},''));
+      chip.title = '상품명에서 검사: ' + preset.keywords;
+      area.append(chip);
+    }
+    updatePresetSelection();
+  }
+  function updatePresetSelection() {
+    const keys = new Set([...$('categoryEditor').querySelectorAll('.categoryRow')]
+      .map(row => categoryKey(row.querySelector('input[type=text]').value)).filter(Boolean));
+    let selected = 0;
+    for (const preset of CATEGORY_PRESETS) {
+      const chip = $('categoryPresets').querySelector('button[data-preset="'+preset.id+'"]');
+      if (!chip) continue;
+      const active = keys.has(categoryKey(preset.keywords));
+      chip.setAttribute('aria-pressed', String(active));
+      chip.querySelector('.presetCheck').textContent = active ? '✓' : '';
+      if (active) selected++;
+    }
+    $('presetCount').textContent = `빠른 카테고리 ${selected}개 선택 · 직접 추가/수정도 가능`;
+  }
   function addCategoryRow(names, strength) {
     const row = mk('div', {class:'categoryRow'});
+    const label = mk('div',{class:'categoryLabel'},'카테고리 검색어');
     const head = mk('div',{class:'categoryRowHead'});
     const keywords = mk('input',{type:'text',placeholder:'해당 단어: 예) 노트북, 모니터', 'aria-label':'카테고리 키워드'});
     keywords.value = names;
     const remove = mk('button',{type:'button',class:'removeCategory','aria-label':'이 카테고리 삭제'},'삭제');
-    remove.addEventListener('click',()=>row.remove());
+    remove.addEventListener('click',()=>{row.remove();updatePresetSelection();});
+    keywords.addEventListener('input',updatePresetSelection);
     const slider = mk('input',{type:'range',min:'0',max:'100',step:'5','aria-label':'카테고리 선호 점수'});
     slider.value = String(strength);
     const number = mk('span',null,String(strength));
@@ -516,8 +588,9 @@
     const range = mk('div',{class:'range'});
     range.append(slider,number);
     head.append(keywords,remove);
-    row.append(head,range);
+    row.append(label,head,range);
     $('categoryEditor').appendChild(row);
+    updatePresetSelection();
   }
   function fillSettings(values = settings) {
     $('priceMode').value = values.priceMode === 'target' ? 'target' : 'relative';
@@ -527,6 +600,7 @@
     }
     $('categoryRules').value = values.categoryRules || '';
     $('categoryEditor').replaceChildren();
+    renderCategoryPresets();
     const rules = String(values.categoryRules || '').split('\n').filter(Boolean);
     for (const text of rules) {
       const colon = text.lastIndexOf(':');
@@ -535,6 +609,7 @@
       addCategoryRow(text.slice(0,colon).trim(),Number.isFinite(number)?Math.max(0,Math.min(100,number)):50);
     }
     if (!rules.length) addCategoryRow('',50);
+    updatePresetSelection();
     $('hideUnavailable').checked = true;
     for (const id of ['priceWeight','keywordWeight','categoryWeight']) $(id+'View').textContent=$(id).value;
     updatePriceModeField();
@@ -545,11 +620,15 @@
     const maxPrice = Math.max(0, Number($('maxPrice').value) || 0);
     if (maxPrice > 0 && minPrice > maxPrice) return error('최저 가격은 최고 가격보다 클 수 없어요.');
     const lines=[];
+    const uniqueCategories = new Set();
     for (const row of $('categoryEditor').querySelectorAll('.categoryRow')) {
       const names = row.querySelector('input[type=text]').value.trim();
       const strength = row.querySelector('input[type=range]').value;
       if (!names) continue;
       if (!scoring.splitKeywords(names).length) continue;
+      const key = categoryKey(names);
+      if (uniqueCategories.has(key)) continue;
+      uniqueCategories.add(key);
       lines.push(`${names}:${strength}`);
     }
     $('categoryRules').value=lines.join('\n');
