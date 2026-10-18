@@ -120,6 +120,7 @@
   .settingsIntro strong{display:block;font-size:14px;margin-bottom:3px}
   .settingsScroll{overflow-y:auto;min-height:0;flex:1;padding:12px 14px 18px}
   .settingGroup{background:white;border:1px solid #e0e7f0;border-radius:11px;margin-bottom:12px;padding:14px}
+  .filterToggle{display:flex;gap:7px;align-items:center;margin:9px 0;font-size:12px;color:#263b50;line-height:1.5}.filterToggle input{accent-color:#1761c2;flex:0 0 auto}
   .settingGroup h3{margin:0 0 4px;font-size:13px;color:#152844}
   .hint{font-size:11px;color:#62738b;line-height:1.55;margin:0 0 10px}
   .field{margin:12px 0 0}.field label{display:block;font-weight:700;font-size:12px;margin-bottom:5px}
@@ -191,7 +192,40 @@
           <p class="hint">추천 점수(0~100)를 바꾸거나 인식할 단어를 직접 수정할 수 있어요. 실제 쿠팡 분류가 아닌 상품명 키워드 기준입니다.</p>
           <textarea id="categoryRules" hidden></textarea><div id="categoryEditor"></div><button type="button" id="addCategory" class="btn">+ 직접 카테고리 추가</button>
         </section>
-        <section class="settingGroup"><h3>④ 가격 설정</h3><p class="hint">체험단 회차마다 비슷한 가격대가 나온다는 점을 고려해 이번 목록 기준을 추천해요.</p>
+
+        <section class="settingGroup"><h3>④ 사용하지 않는 상품 제외</h3>
+          <p class="hint">점수를 낮추는 대신 추천에서 완전히 제외해요. 상품명에 적힌 조건만으로 판단합니다.</p>
+          <label class="filterToggle"><input id="excludeBabyItems" type="checkbox"> 아기·유아용품 제외</label>
+          <label class="filterToggle"><input id="excludeWomenItems" type="checkbox"> 여성 전용 의류·신발·위생용품 제외</label>
+          <label class="filterToggle"><input id="strictSizeMatching" type="checkbox"> 선택한 사이즈가 명시된 옷·신발만 추천</label>
+          <div class="double">
+            <div class="field"><label for="clothingSize">내 의류 사이즈</label><select id="clothingSize">
+              <option value="">미선택: 의류 제외</option>
+              <option>90</option><option>95</option><option>100</option><option>105</option><option>110</option><option>115</option><option>120</option>
+              <option>XS</option><option>S</option><option>M</option><option>L</option><option>XL</option><option>XXL</option><option>2XL</option><option>3XL</option>
+            </select></div>
+            <div class="field"><label for="shoeSize">내 신발 사이즈</label><select id="shoeSize">
+              <option value="">미선택: 신발 제외</option><option>220</option><option>225</option><option>230</option><option>235</option><option>240</option><option>245</option><option>250</option><option>255</option><option>260</option><option>265</option><option>270</option><option>275</option><option>280</option><option>285</option><option>290</option><option>295</option><option>300</option>
+            </select></div>
+          </div><p class="hint">의류·신발 사이즈를 모르겠으면 미선택으로 두세요. 호환 불명확 상품은 추천하지 않습니다.</p>
+        </section>
+        <section class="settingGroup"><h3>⑤ 내 기기와 호환되는 액세서리만</h3>
+          <div class="field"><label for="phoneModel">휴대폰 기종</label><select id="phoneModel">
+            <option value="">미선택: 휴대폰 전용 액세서리 제외</option>
+            <option value="갤럭시 S24+">갤럭시 S24+ (플러스)</option><option value="갤럭시 S24">갤럭시 S24 기본형</option><option value="갤럭시 S24 울트라">갤럭시 S24 울트라</option>
+            <option value="갤럭시 S25+">갤럭시 S25+ (플러스)</option><option value="갤럭시 S25">갤럭시 S25 기본형</option><option value="갤럭시 S25 울트라">갤럭시 S25 울트라</option>
+            <option value="갤럭시 S23+">갤럭시 S23+ (플러스)</option><option value="아이폰 16 프로">아이폰 16 프로</option><option value="아이폰 16 프로맥스">아이폰 16 프로맥스</option>
+            <option value="아이폰 17 프로">아이폰 17 프로</option><option value="아이폰 17 프로맥스">아이폰 17 프로맥스</option>
+          </select></div>
+          <div class="field"><label for="watchModel">스마트워치 기종 · 크기</label><select id="watchModel">
+            <option value="">미선택: 워치 전용 액세서리 제외</option>
+            <option value="갤럭시워치6 44mm">갤럭시워치6 44mm</option><option value="갤럭시워치6 40mm">갤럭시워치6 40mm</option>
+            <option value="갤럭시워치5 44mm">갤럭시워치5 44mm</option><option value="갤럭시워치5 40mm">갤럭시워치5 40mm</option>
+            <option value="갤럭시워치7 44mm">갤럭시워치7 44mm</option><option value="갤럭시워치7 40mm">갤럭시워치7 40mm</option>
+          </select></div>
+          <p class="hint">기기 전용 상품의 모델명이 명확하게 일치하는 경우에만 추천합니다. 범용 USB-C 충전기처럼 공용 제품은 예외입니다.</p>
+        </section>
+        <section class="settingGroup"><h3>⑥ 가격 설정</h3><p class="hint">체험단 회차마다 비슷한 가격대가 나온다는 점을 고려해 이번 목록 기준을 추천해요.</p>
           <div class="field"><label for="priceMode">가격 점수 계산법</label><select id="priceMode"><option value="relative">이번 목록 중앙값 대비 가격 (추천)</option><option value="target">직접 지정한 목표 가격</option></select></div>
           <div class="field" id="preferredPriceField"><label for="preferredPrice">목표 가격 (원)</label><input id="preferredPrice" type="number" min="1000" step="1000"><p class="hint">직접 목표 가격을 설정하는 방식에서만 사용해요.</p></div>
           <div class="double"><div class="field"><label for="minPrice">최저 가격 제한 (원)</label><input id="minPrice" type="number" min="0" step="1000" placeholder="0 = 제한 없음"></div><div class="field"><label for="maxPrice">최고 가격 제한 (원)</label><input id="maxPrice" type="number" min="0" step="1000" placeholder="0 = 제한 없음"></div></div>
@@ -598,6 +632,8 @@
                       'priceWeight','keywordWeight','categoryWeight','preferredPrice','minPrice','maxPrice']) {
       $(id).value = values[id] ?? '';
     }
+    for(const id of ['excludeBabyItems','excludeWomenItems','strictSizeMatching']) $(id).checked=values[id]!==false;
+    for(const id of ['clothingSize','shoeSize','phoneModel','watchModel']) $(id).value=values[id]??'';
     $('categoryRules').value = values.categoryRules || '';
     $('categoryEditor').replaceChildren();
     renderCategoryPresets();
@@ -635,6 +671,8 @@
     for (const id of ['priorityKeywords','preferredKeywords','excludeKeywords','categoryRules']) settings[id]=$(id).value;
     settings.priceMode=$('priceMode').value;
     for (const id of ['priceWeight','keywordWeight','categoryWeight','preferredPrice','minPrice','maxPrice']) settings[id]=Math.max(0,Number($(id).value)||0);
+    for(const id of ['excludeBabyItems','excludeWomenItems','strictSizeMatching']) settings[id]=$(id).checked;
+    for(const id of ['clothingSize','shoeSize','phoneModel','watchModel']) settings[id]=$(id).value;
     settings.hideUnavailable=true;
     try { if (typeof chrome !== 'undefined' && chrome.storage?.local) chrome.storage.local.set({[STORAGE_KEY]:settings});
       else if (isDemoPage()) localStorage.setItem(STORAGE_KEY,JSON.stringify(settings)); } catch (_) { }
