@@ -27,13 +27,32 @@ function countFor(i,level){
   if(level===0)return initial;
   return Math.max(0,initial-level*(1+i%3));
 }
+// 소진 상품을 소진된 순서대로 아래에 누적. 상품 목록은 새로고침 시점에만 정렬.
+function firstSoldOutStage(index){
+  for(let level=0;level<=15;level++) if(countFor(index,level)===0) return level;
+  return Infinity;
+}
+const productOrder=rows.map((_,index)=>({
+  index,
+  soldOutAt:firstSoldOutStage(index),
+  remaining:countFor(index,stage),
+})).sort((a,b)=>{
+  const aSold=a.remaining===0,bSold=b.remaining===0;
+  if(aSold!==bSold)return aSold?1:-1;
+  if(aSold&&a.soldOutAt!==b.soldOutAt)return a.soldOutAt-b.soldOutAt;
+  return a.index-b.index;
+});
 function appendChunk(size){
   const fragment=document.createDocumentFragment();
   const max=Math.min(shown+size,rows.length);
-  for(let i=shown;i<max;i++){
-    const [name,price]=rows[i], count=countFor(i,stage);
-    const card=document.createElement('article');card.className='product-row'+(count===0?' soldout':'');
-    const n=document.createElement('span');n.className='number';n.textContent=i+1;
+  for(let position=shown;position<max;position++){
+    const {index:i,remaining:count,soldOutAt}=productOrder[position];
+    const [name,price]=rows[i];
+    const card=document.createElement('article');
+    card.className='product-row'+(count===0?' soldout':'');
+    card.dataset.productId=String(i);
+    card.dataset.soldOutAt=Number.isFinite(soldOutAt)?String(soldOutAt):'';
+    const n=document.createElement('span');n.className='number';n.textContent=position+1;
     const img=document.createElement('img');img.className='thumb';img.alt='상품 이미지';img.src=`images/product_${String((i%thumbnailCount)+1).padStart(2,'0')}.jpg`;
     const detail=document.createElement('div');detail.className='detail';
     const title=document.createElement('div');title.className='product-name';title.textContent=name;
@@ -46,7 +65,7 @@ function appendChunk(size){
   const active=[...$('items').querySelectorAll('.product-row:not(.soldout)')].length;
   $('count').textContent=`${shown}/${rows.length}개 표시 · 신청 가능 ${active}개 · 소진 ${shown-active}개`;
   $('end').textContent=shown>=rows.length
-    ? '목록 끝 · 재고는 F5 새로고침 시점에만 갱신됩니다.'
+    ? '목록 끝 · 소진 상품은 소진 순서대로 맨 아래에 쌓입니다. 재고는 F5로만 갱신됩니다.'
     : '아래로 스크롤하면 다음 10개 상품을 불러옵니다.';
 }
 function queueNextPage(){
@@ -84,4 +103,4 @@ window.addEventListener('scroll',()=>{
 },{passive:true});
 initModal();refreshHint();appendChunk(FIRST_PAGE_SIZE);
 // Test-only diagnostic. No remote requests.
-window.__vineDemoDebug=()=>({shown,total:rows.length,stage,loading,scrollEventCount,pageLoads,active:[...$('items').querySelectorAll('.product-row:not(.soldout)')].length,allPricesWithin50k:rows.every(r=>r[1]<=50000)});
+window.__vineDemoDebug=()=>({shown,total:rows.length,stage,loading,scrollEventCount,pageLoads,active:[...$('items').querySelectorAll('.product-row:not(.soldout)')].length,allPricesWithin50k:rows.every(r=>r[1]<=50000),order:productOrder.map(p=>p.index),depleted:productOrder.filter(p=>p.remaining===0).map(p=>({id:p.index,soldOutAt:p.soldOutAt}))});
